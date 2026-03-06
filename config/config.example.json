@@ -1,0 +1,49 @@
+{
+  "mqtt": {
+    "base_topic": "wmbus/heat",
+    "retain": true,
+    "qos": 1,
+    "client_id": "loxberry-wmbusmeters"
+  },
+  "radio": {
+    "device": "rtlwmbus",
+    "mode": "t1",
+    "ppm": 0,
+    "rtl_index": 0,
+    "reset_after": "23h",
+    "log_level": "normal",
+    "log_telegrams": false,
+    "ignore_duplicates": true,
+    "discovery_seconds": 30
+  },
+  "paths": {
+    "workdir": "/tmp/loxberry-wmbusmeters",
+    "logfile": "/tmp/loxberry-wmbusmeters/bridge.log"
+  },
+  "meters": [
+    {
+      "name": "wohnung1",
+      "label": "Wohnung 1",
+      "id": "",
+      "driver": "sharky",
+      "key": "",
+      "enabled": true
+    },
+    {
+      "name": "wohnung2",
+      "label": "Wohnung 2",
+      "id": "",
+      "driver": "sharky",
+      "key": "",
+      "enabled": true
+    },
+    {
+      "name": "wohnung3",
+      "label": "Wohnung 3",
+      "id": "",
+      "driver": "sharky",
+      "key": "",
+      "enabled": true
+    }
+  ]
+}
