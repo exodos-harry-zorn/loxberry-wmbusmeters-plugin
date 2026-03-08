@@ -208,7 +208,7 @@ def resolve_mqtt_settings(cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any
 
 
 def mqtt_widget_url() -> str:
-    return "/admin/system/mqtt-finder.cgi"
+    return "/admin/system/mqtt-finder.cgi?q=wmbus"
 
 
 def admin_home_url() -> str:

@@ -400,7 +400,7 @@ def render_mqtt(cfg):
         <tr><th>Resolved Topic</th><td>{esc(cfg['mqtt'].get('base_topic', 'wmbus/heat'))}</td></tr>
       </table>
       <div class="button-row linkrow" style="margin-top: 15px;">
-        <a class="linkbtn ui-btn ui-btn-inline ui-mini" target="_blank" href="{esc(mqtt_widget_url())}"><i class="fa fa-wifi"></i> Open MQTT Widget</a>
+        <a class="linkbtn ui-btn ui-btn-inline ui-mini" href="{esc(mqtt_widget_url())}"><i class="fa fa-search"></i> Open MQTT Finder</a>
       </div>
     </div>
     '''
