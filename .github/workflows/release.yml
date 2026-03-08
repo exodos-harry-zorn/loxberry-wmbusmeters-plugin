@@ -141,12 +141,10 @@ jobs:
           INFO_URL="https://github.com/${{ github.repository }}/releases/tag/v${NEW_VERSION}"
 
           # Completely rewrite release.cfg to ensure correct format for LoxBerry updater
-          cat <<EOF > release.cfg
-[AUTOUPDATE]
-VERSION=$NEW_VERSION
-ARCHIVEURL=$DOWNLOAD_URL
-INFOURL=$INFO_URL
-EOF
+          echo "[AUTOUPDATE]" > release.cfg
+          echo "VERSION=$NEW_VERSION" >> release.cfg
+          echo "ARCHIVEURL=$DOWNLOAD_URL" >> release.cfg
+          echo "INFOURL=$INFO_URL" >> release.cfg
 
           # Also create/update prerelease.cfg to prevent 404 errors in LoxBerry updater
           cp release.cfg prerelease.cfg
