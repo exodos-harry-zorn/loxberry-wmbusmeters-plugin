@@ -444,19 +444,26 @@ def render_radio(cfg):
 
 def render_meter_card(meter_data, index):
     meter = meter_data
-    # Use index to generate unique names for dynamically added fields
+    # Use index to generate unique names for dynamically added fields.
+    # Handle the case where index is a placeholder string "METER_INDEX_PLACEHOLDER"
+    try:
+        idx_num = int(index)
+        display_idx = idx_num + 1
+    except ValueError:
+        display_idx = "${nextMeterIndex + 1}"
+        
     return f'''
     <div class="card meter-card" data-meter-index="{index}">
         <h2>
-            <span class="meter-label">{esc(meter.get('label', f'Meter {index+1}'))}</span>
+            <span class="meter-label">{esc(meter.get('label', f'Meter {display_idx}'))}</span>
             <button type="button" class="ui-btn ui-mini ui-btn-inline ui-btn-icon-notext ui-icon-delete ui-btn-a remove-meter-btn" title="Remove Meter" style="float: right;">Remove</button>
         </h2>
         <div class="grid two compactgrid">
             <label>Name
-                <input type="text" name="meter_{index}_name" value="{esc(meter.get('name', f'meter_{index+1}'))}">
+                <input type="text" name="meter_{index}_name" value="{esc(meter.get('name', f'meter_{display_idx}'))}">
             </label>
             <label>Label
-                <input type="text" name="meter_{index}_label" value="{esc(meter.get('label', f'Meter {index+1}'))}">
+                <input type="text" name="meter_{index}_label" value="{esc(meter.get('label', f'Meter {display_idx}'))}">
             </label>
             <label>Meter ID
                 <input type="text" name="meter_{index}_id" value="{esc(meter.get('id', ''))}" placeholder="discover first, then paste ID here">
@@ -477,6 +484,9 @@ def render_meters(cfg):
     for i, meter in enumerate(cfg.get('meters', [])):
         cards.append(render_meter_card(meter, i))
 
+    # Generate a template for new meters in Python, allowing JS to replace the placeholder
+    template_html = render_meter_card({}, "METER_INDEX_PLACEHOLDER")
+
     return f'''
     <div id="meter-container">
         {''.join(cards)}
@@ -491,10 +501,27 @@ def render_meters(cfg):
         let nextMeterIndex = {len(cfg.get('meters', []))};
 
         function addMeter(meterData = {{}}) {{
-            const newMeterHtml = `{render_meter_card(meterData, nextMeterIndex)}`;
-            $('#meter-container').append(newMeterHtml);
+            let newMeterHtml = `{template_html}`;
+            // Simple replacement for index placeholder
+            newMeterHtml = newMeterHtml.replace(/METER_INDEX_PLACEHOLDER/g, nextMeterIndex);
+            
+            // If data is provided (from discovery), we can pre-fill it via jQuery after insertion
+            const $newCard = $(newMeterHtml);
+            
+            if (meterData.id) {{
+                $newCard.find('input[name="meter_' + nextMeterIndex + '_id"]').val(meterData.id);
+            }}
+            if (meterData.driver) {{
+                $newCard.find('input[name="meter_' + nextMeterIndex + '_driver"]').val(meterData.driver);
+            }}
+            if (meterData.key) {{
+                $newCard.find('input[name="meter_' + nextMeterIndex + '_key"]').val(meterData.key);
+            }}
+
+            $('#meter-container').append($newCard);
             // Re-enhance new jQuery Mobile elements
-            $(`#meter-container .meter-card[data-meter-index="${nextMeterIndex}"]`).enhanceWithin();
+            $(`#meter-container .meter-card[data-meter-index="${{nextMeterIndex}}"]`).enhanceWithin();
+            
             nextMeterIndex++;
             // Re-bind remove event for new button
             $('.remove-meter-btn').off('click').on('click', function() {{
