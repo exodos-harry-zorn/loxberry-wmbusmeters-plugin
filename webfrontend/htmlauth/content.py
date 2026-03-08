@@ -591,8 +591,8 @@ def render_discovery(cfg):
                         'id': meterId,
                         'driver': meterDriver,
                         'key': meterKey,
-                        'name': `meter_${nextMeterIndex + 1}`, // Generate a default name
-                        'label': `Meter ${nextMeterIndex + 1}`, // Generate a default label
+                        'name': `meter_${{nextMeterIndex + 1}}`, // Generate a default name
+                        'label': `Meter ${{nextMeterIndex + 1}}`, // Generate a default label
                         'enabled': true
                     }};
                     // Call the addMeter function from the meters tab logic
