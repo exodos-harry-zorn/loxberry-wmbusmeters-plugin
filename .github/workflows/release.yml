@@ -4,56 +4,72 @@ on:
   workflow_dispatch:
     inputs:
       new_version:
-        description: 'New plugin version (e.g., 0.3.9)'
+        description: "New plugin version (e.g., 0.3.6)"
         required: true
+        type: string
 
 permissions:
-  contents: write # Allow the workflow to write to the repository for pushing release.cfg updates
+  contents: write
+
+concurrency:
+  group: release-plugin
+  cancel-in-progress: false
 
 jobs:
   release:
     runs-on: ubuntu-latest
+
+    env:
+      PLUGIN_DIR: loxberry-wmbusmeters-plugin
+
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0 # Needed for git operations like push
-          token: ${{ secrets.GH_TOKEN }}
+          fetch-depth: 0
+
+      - name: Validate version input
+        run: |
+          set -euo pipefail
+          VERSION="${{ inputs.new_version }}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid version: $VERSION"
+            echo "Expected format: X.Y.Z"
+            exit 1
+          fi
 
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
-          python-version: '3.x'
-
-      - name: Install gh CLI (required for fetching asset URL)
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y gh
+          python-version: "3.x"
 
       - name: Read current plugin details
         id: read_config
         run: |
-          PLUGIN_NAME=$(grep "NAME=" loxberry-wmbusmeters-plugin/plugin.cfg | cut -d'=' -f2)
-          PLUGIN_FOLDER=$(grep "FOLDER=" loxberry-wmbusmeters-plugin/plugin.cfg | cut -d'=' -f2)
-          echo "PLUGIN_NAME=$PLUGIN_NAME" >> "$GITHUB_OUTPUT"
-          echo "PLUGIN_FOLDER=$PLUGIN_FOLDER" >> "$GITHUB_OUTPUT"
-          echo "Read plugin name: $PLUGIN_NAME, folder: $PLUGIN_FOLDER"
+          set -euo pipefail
+          PLUGIN_NAME="$(grep '^NAME=' "$PLUGIN_DIR/plugin.cfg" | cut -d'=' -f2-)"
+          PLUGIN_FOLDER="$(grep '^FOLDER=' "$PLUGIN_DIR/plugin.cfg" | cut -d'=' -f2-)"
+          echo "plugin_name=$PLUGIN_NAME" >> "$GITHUB_OUTPUT"
+          echo "plugin_folder=$PLUGIN_FOLDER" >> "$GITHUB_OUTPUT"
+          echo "Plugin name: $PLUGIN_NAME"
+          echo "Plugin folder: $PLUGIN_FOLDER"
 
       - name: Update plugin.cfg with new version
         run: |
-          NEW_VERSION="${{ github.event.inputs.new_version }}"
-          sed -i "s/^VERSION=.*/VERSION=$NEW_VERSION/" loxberry-wmbusmeters-plugin/plugin.cfg
+          set -euo pipefail
+          NEW_VERSION="${{ inputs.new_version }}"
+          sed -i "s/^VERSION=.*/VERSION=$NEW_VERSION/" "$PLUGIN_DIR/plugin.cfg"
           echo "Updated plugin.cfg to version $NEW_VERSION"
 
       - name: Create ZIP archive
         id: create_zip
         run: |
-          PLUGIN_DIR="loxberry-wmbusmeters-plugin"
-          ZIP_FILE_NAME="${{ steps.read_config.outputs.PLUGIN_FOLDER }}-${{ github.event.inputs.new_version }}.zip"
-          
-          # Create a temporary directory for zipping to exclude unwanted files
-          TEMP_ZIP_DIR="temp_plugin_content"
-          mkdir -p "$TEMP_ZIP_DIR"
+          set -euo pipefail
+
+          NEW_VERSION="${{ inputs.new_version }}"
+          ZIP_FILE_NAME="${{ steps.read_config.outputs.plugin_folder }}-${NEW_VERSION}.zip"
+          TEMP_ZIP_DIR="$(mktemp -d)"
+
           rsync -a "$PLUGIN_DIR/" "$TEMP_ZIP_DIR/$PLUGIN_DIR/" \
             --exclude '.git/' \
             --exclude '.github/' \
@@ -63,65 +79,66 @@ jobs:
             --exclude '.pytest_cache/' \
             --exclude '.idea/' \
             --exclude '.venv/'
-          
-          # Ensure the base directory of the plugin is included in the zip
-          zip -r "$ZIP_FILE_NAME" "$TEMP_ZIP_DIR/$PLUGIN_DIR" # zip the content of the plugin folder
-          echo "ZIP_FILE_PATH=$ZIP_FILE_NAME" >> "$GITHUB_OUTPUT"
-          
-          # Calculate MD5 checksum
-          MD5_CHECKSUM=$(md5sum "$ZIP_FILE_NAME" | awk '{print $1}')
-          echo "MD5_CHECKSUM=$MD5_CHECKSUM" >> "$GITHUB_OUTPUT"
-          echo "Generated $ZIP_FILE_NAME with MD5: $MD5_CHECKSUM"
 
-      - name: Create GitHub Release
-        id: create_release
-        uses: softprops/action-gh-release@v1
-        with:
-          tag_name: v${{ github.event.inputs.new_version }}
-          name: Release v${{ github.event.inputs.new_version }} - Automated Features Update
-          body: |
-            Automated release for version ${{ github.event.inputs.new_version }}.
-            
-            **Changes in this release:**
-            - Dynamic N number of sensors in UI.
-            - Full LoxBerry UI scaffolding integration with Perl wrapper and Python content script.
-            - Corrected version display in LoxBerry plugin management.
+          (
+            cd "$TEMP_ZIP_DIR"
+            zip -r "$GITHUB_WORKSPACE/$ZIP_FILE_NAME" "$PLUGIN_DIR"
+          )
 
-            Please replace this with detailed release notes for end-users.
+          MD5_CHECKSUM="$(md5sum "$ZIP_FILE_NAME" | awk '{print $1}')"
 
-            **Assets:**
-            - ${{ steps.create_zip.outputs.ZIP_FILE_PATH }} (MD5: ${{ steps.create_zip.outputs.MD5_CHECKSUM }})
-          files: ${{ steps.create_zip.outputs.ZIP_FILE_PATH }}
-          token: ${{ secrets.GH_TOKEN }}
+          echo "zip_file_path=$ZIP_FILE_NAME" >> "$GITHUB_OUTPUT"
+          echo "md5_checksum=$MD5_CHECKSUM" >> "$GITHUB_OUTPUT"
 
-      - name: Get Release Asset URL
-        id: get_asset_url
-        run: |
-          # Construct the direct download URL as per GitHub Releases convention
-          DIRECT_DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.new_version }}/${{ steps.create_zip.outputs.ZIP_FILE_PATH }}"
-          echo "DIRECT_DOWNLOAD_URL=$DIRECT_DOWNLOAD_URL" >> "$GITHUB_OUTPUT"
-          echo "Direct download URL: $DIRECT_DOWNLOAD_URL"
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }} # Needed for gh CLI (implicitly)
+          echo "Generated $ZIP_FILE_NAME"
+          echo "MD5: $MD5_CHECKSUM"
 
       - name: Update release.cfg with new release details
         run: |
-          NEW_VERSION="${{ github.event.inputs.new_version }}"
-          MD5_CHECKSUM="${{ steps.create_zip.outputs.MD5_CHECKSUM }}"
-          DOWNLOAD_URL="${{ steps.get_asset_url.outputs.DIRECT_DOWNLOAD_URL }}"
-          INFO_URL="https://github.com/${{ github.repository }}/releases/tag/v${{ github.event.inputs.new_version }}"
+          set -euo pipefail
 
-          # Update the release.cfg file in the repository
-          sed -i "s/^VERSION=.*/VERSION=$NEW_VERSION/" loxberry-wmbusmeters-plugin/release.cfg
-          sed -i "s/^MD5=.*/MD5=$MD5_CHECKSUM/" loxberry-wmbusmeters-plugin/release.cfg
-          sed -i "s|^\(URL=\).*|\1$DOWNLOAD_URL|" loxberry-wmbusmeters-plugin/release.cfg
-          sed -i "s|^\(INFOURL=\).*|\1$INFO_URL|" loxberry-wmbusmeters-plugin/release.cfg
-          echo "Updated release.cfg with version $NEW_VERSION, MD5 and URL."
+          NEW_VERSION="${{ inputs.new_version }}"
+          MD5_CHECKSUM="${{ steps.create_zip.outputs.md5_checksum }}"
+          ZIP_FILE_NAME="${{ steps.create_zip.outputs.zip_file_path }}"
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/v${NEW_VERSION}/${ZIP_FILE_NAME}"
+          INFO_URL="https://github.com/${{ github.repository }}/releases/tag/v${NEW_VERSION}"
 
-      - name: Commit and push changes to release.cfg and plugin.cfg
-        uses: stefanzweifel/git-auto-commit-action@v5
+          sed -i "s/^VERSION=.*/VERSION=$NEW_VERSION/" "$PLUGIN_DIR/release.cfg"
+          sed -i "s/^MD5=.*/MD5=$MD5_CHECKSUM/" "$PLUGIN_DIR/release.cfg"
+          sed -i "s|^URL=.*|URL=$DOWNLOAD_URL|" "$PLUGIN_DIR/release.cfg"
+          sed -i "s|^INFOURL=.*|INFOURL=$INFO_URL|" "$PLUGIN_DIR/release.cfg"
+
+          echo "Updated release.cfg"
+
+      - name: Commit and push config changes
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add "$PLUGIN_DIR/plugin.cfg" "$PLUGIN_DIR/release.cfg"
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "ci: release v${{ inputs.new_version }}"
+            git push origin HEAD:${{ github.ref_name }}
+          fi
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
         with:
-          commit_message: 'ci: Automated release for v${{ github.event.inputs.new_version }}'
-          branch: main # Or your default branch
-          file_pattern: 'loxberry-wmbusmeters-plugin/plugin.cfg loxberry-wmbusmeters-plugin/release.cfg'
-          token: ${{ secrets.GH_TOKEN }}
+          tag_name: v${{ inputs.new_version }}
+          target_commitish: ${{ github.ref_name }}
+          name: Release v${{ inputs.new_version }}
+          body: |
+            Automated release for version ${{ inputs.new_version }}.
+
+            Assets:
+            - ${{ steps.create_zip.outputs.zip_file_path }}
+            - MD5: ${{ steps.create_zip.outputs.md5_checksum }}
+          files: |
+            ${{ steps.create_zip.outputs.zip_file_path }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
