@@ -137,25 +137,21 @@ jobs:
 
           NEW_VERSION="${{ inputs.new_version }}"
           ZIP_FILE="${{ steps.zip.outputs.zip_file }}"
-          MD5_CHECKSUM="${{ steps.zip.outputs.md5 }}"
-          INFO_URL="https://github.com/${{ github.repository }}/releases/tag/v${NEW_VERSION}"
           DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/v${NEW_VERSION}/${ZIP_FILE}"
+          INFO_URL="https://github.com/${{ github.repository }}/releases/tag/v${NEW_VERSION}"
 
-          if [ ! -f "release.cfg" ]; then
-            echo "release.cfg not found in repository root"
-            exit 1
-          fi
-
-          sed -i "s/^VERSION=.*/VERSION=$NEW_VERSION/" release.cfg
-          sed -i "s/^MD5=.*/MD5=$MD5_CHECKSUM/" release.cfg
-          sed -i "s|^URL=.*|URL=$DOWNLOAD_URL|" release.cfg
-          sed -i "s|^INFOURL=.*|INFOURL=$INFO_URL|" release.cfg
-          sed -i "s|^FILENAME=.*|FILENAME=$ZIP_FILE|" release.cfg
+          # Completely rewrite release.cfg to ensure correct format for LoxBerry updater
+          cat <<EOF > release.cfg
+[AUTOUPDATE]
+VERSION=$NEW_VERSION
+ARCHIVEURL=$DOWNLOAD_URL
+INFOURL=$INFO_URL
+EOF
 
           # Also create/update prerelease.cfg to prevent 404 errors in LoxBerry updater
           cp release.cfg prerelease.cfg
 
-          echo "Updated release.cfg and prerelease.cfg"
+          echo "Generated release.cfg and prerelease.cfg with VERSION=$NEW_VERSION and ARCHIVEURL=$DOWNLOAD_URL"
 
       - name: Commit updated config files
         run: |
