@@ -150,8 +150,12 @@ jobs:
           sed -i "s/^MD5=.*/MD5=$MD5_CHECKSUM/" release.cfg
           sed -i "s|^URL=.*|URL=$DOWNLOAD_URL|" release.cfg
           sed -i "s|^INFOURL=.*|INFOURL=$INFO_URL|" release.cfg
+          sed -i "s|^FILENAME=.*|FILENAME=$ZIP_FILE|" release.cfg
 
-          echo "Updated release.cfg"
+          # Also create/update prerelease.cfg to prevent 404 errors in LoxBerry updater
+          cp release.cfg prerelease.cfg
+
+          echo "Updated release.cfg and prerelease.cfg"
 
       - name: Commit updated config files
         run: |
@@ -160,7 +164,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
-          git add plugin.cfg release.cfg
+          git add plugin.cfg release.cfg prerelease.cfg
 
           if git diff --cached --quiet; then
             echo "No changes to commit"
