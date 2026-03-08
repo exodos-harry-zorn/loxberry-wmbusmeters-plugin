@@ -1,5 +1,11 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
+# LoxBerry Plugin wM-Bus Heat Meter Bridge - Python Content Provider
+#
+# This script is responsible for rendering the plugin's main content (forms, tables, logs).
+# It is called by a Perl wrapper script which handles the LoxBerry UI scaffolding
+# (header, navigation, footer, CSS, JS).
+
 import html
 import json
 import os
@@ -9,12 +15,14 @@ from pathlib import Path
 from urllib.parse import parse_qs
 
 PLUGIN_FOLDER = "loxberry-wmbusmeters"
-PLUGIN_NAME = "wmbusmetersbridge"
+PLUGIN_NAME = "wmbusmetersbridge" # This must match the NAME in plugin.cfg
+
+# LoxBerry environment variables are generally available
 CONFIG_DIR = Path(os.environ.get('LBP_CONFIGDIR', f'/opt/loxberry/config/plugins/{PLUGIN_FOLDER}'))
 BIN_DIR = Path(os.environ.get('LBP_BINDIR', f'/opt/loxberry/bin/plugins/{PLUGIN_FOLDER}'))
 DAEMON_PATH = Path(f'/opt/loxberry/system/daemons/plugins/{PLUGIN_NAME}')
 INSTALLER = BIN_DIR / 'install_deps.sh'
-TMP_DIR = Path('/tmp/loxberry-wmbusmeters')
+TMP_DIR = Path(os.environ.get('LBPTMPDIR', f'/tmp/loxberry-wmbusmeters')) # Use LBPTMPDIR if available
 TMP_DIR.mkdir(parents=True, exist_ok=True)
 ERROR_LOG = TMP_DIR / 'ui_error.log'
 CONFIG_FILE = CONFIG_DIR / 'config.json'
@@ -24,16 +32,9 @@ DISCOVERY_LOG = TMP_DIR / 'discovery.log'
 DEPS_LOG = TMP_DIR / 'deps_install.log'
 PID_FILE = TMP_DIR / 'bridge.pid'
 
+# Ensure common.py is importable. It should be in BIN_DIR, which is in sys.path
 sys.path.insert(0, str(BIN_DIR))
-from common import resolve_mqtt_settings, mqtt_widget_url, admin_home_url, plugin_overview_url, HEALTHCHECK_FILE  # type: ignore
-
-TABS = [
-    ("overview", "Overview", "fa fa-tachometer-alt"),
-    ("mqtt", "MQTT", "fa fa-wifi"),
-    ("radio", "Radio", "fa fa-broadcast-tower"),
-    ("meters", "Meters", "fa fa-thermometer-half"),
-    ("discovery", "Discovery & Logs", "fa fa-search"),
-]
+from common import resolve_mqtt_settings, mqtt_widget_url, admin_home_url, plugin_overview_url, HEALTHCHECK_FILE # type: ignore
 
 def read_health_check_status():
     try:
@@ -44,7 +45,6 @@ def read_health_check_status():
         log_error(f'read_health_check_status failed: {e}')
     return {}
 
-
 def log_error(msg):
     try:
         with ERROR_LOG.open('a', encoding='utf-8') as f:
@@ -52,11 +52,14 @@ def log_error(msg):
     except Exception:
         pass
 
-
 def default_config():
     return {
         'mqtt': {'base_topic': 'wmbus/heat', 'retain': True, 'qos': 1, 'client_id': 'loxberry-wmbusmeters'},
-        'radio': {'device': 'rtlwmbus', 'mode': 't1', 'ppm': 0, 'rtl_index': 0, 'reset_after': '23h', 'log_level': 'normal', 'log_telegrams': False, 'ignore_duplicates': True, 'discovery_seconds': 30},
+        'radio': {
+            'device': 'rtlwmbus', 'mode': 't1', 'ppm': 0, 'rtl_index': 0, 'reset_after': '23h',
+            'log_level': 'normal', 'log_telegrams': False, 'ignore_duplicates': True, 'discovery_seconds': 30,
+            'meter_whitelist': [], 'meter_blacklist': []
+        },
         'meters': [
             {'name': 'wohnung1', 'label': 'Wohnung 1', 'id': '', 'driver': 'sharky', 'key': '', 'enabled': True},
             {'name': 'wohnung2', 'label': 'Wohnung 2', 'id': '', 'driver': 'sharky', 'key': '', 'enabled': True},
@@ -64,31 +67,32 @@ def default_config():
         ]
     }
 
-
 def load_config():
-    for path in [CONFIG_FILE, EXAMPLE_FILE]:
-        try:
-            if path.exists():
-                with path.open('r', encoding='utf-8') as f:
-                    data = json.load(f)
-                    if isinstance(data, dict):
-                        cfg = default_config()
-                        cfg['mqtt'].update(data.get('mqtt', {}))
-                        cfg['radio'].update(data.get('radio', {}))
-                        if isinstance(data.get('meters'), list):
-                            cfg['meters'] = data['meters']
-                        return cfg
-        except Exception as e:
-            log_error(f'load_config failed for {path}: {e}')
-    return default_config()
-
+    # Use LoxBerry's CONFIG_FILE or EXAMPLE_FILE, updating with defaults
+    path = CONFIG_FILE if CONFIG_FILE.exists() else EXAMPLE_FILE
+    if not path.exists():
+        # If no config exists, create a default one
+        CONFIG_DIR.mkdir(parents=True, exist_ok=True)
+        default = default_config()
+        save_config(default)
+        return default
+    
+    with path.open('r', encoding='utf-8') as f:
+        cfg = json.load(f)
+    
+    # Merge with default config to ensure all keys are present
+    default = default_config()
+    default['mqtt'].update(cfg.get('mqtt', {}))
+    default['radio'].update(cfg.get('radio', {}))
+    if isinstance(cfg.get('meters'), list):
+        default['meters'] = cfg['meters'] # Directly use meters from file if it's a list
+    return default
 
 def save_config(cfg):
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     with CONFIG_FILE.open('w', encoding='utf-8') as f:
         json.dump(cfg, f, indent=2, ensure_ascii=False)
         f.write('\n')
-
 
 def read_post_data():
     try:
@@ -97,20 +101,19 @@ def read_post_data():
         length = 0
     return sys.stdin.read(length) if length > 0 else ''
 
-
 def get_form():
     method = os.environ.get('REQUEST_METHOD', 'GET').upper()
     raw = read_post_data() if method == 'POST' else os.environ.get('QUERY_STRING', '')
     return {k: v[-1] for k, v in parse_qs(raw, keep_blank_values=True).items()}
 
-
 def bool_from_form(form, key):
     return form.get(key) in ('1', 'on', 'true', 'yes')
 
-
 def shell(cmd, timeout=60):
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        # Use LBPLOGDIR for plugin's log files
+        with open(f"{LOG_FILE}", "a", encoding="utf-8") as log_output:
+            return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, stderr=log_output, stdout=log_output)
     except Exception as e:
         log_error(f'shell failed {cmd}: {e}')
         class Dummy:
@@ -119,14 +122,11 @@ def shell(cmd, timeout=60):
             stderr = str(e)
         return Dummy()
 
-
 def sudo_shell(cmd, timeout=60):
     return shell(['sudo', '-n'] + cmd, timeout=timeout)
 
-
 def command_exists(name):
     return shell(['bash', '-lc', f'command -v {name} >/dev/null 2>&1']).returncode == 0
-
 
 def deps_status():
     return {
@@ -139,7 +139,6 @@ def deps_status():
         'sudo_installer': sudo_shell([str(INSTALLER), '--status']).returncode == 0 if INSTALLER.exists() else False,
     }
 
-
 def dependency_job_status():
     if INSTALLER.exists():
         res = sudo_shell([str(INSTALLER), '--status'])
@@ -147,7 +146,6 @@ def dependency_job_status():
         if txt:
             return txt.replace('sudo: a password is required', 'sudoers not active').replace('sudo: a terminal is required to read the password', 'sudoers not active')
     return 'idle'
-
 
 def service_status():
     if DAEMON_PATH.exists():
@@ -162,7 +160,6 @@ def service_status():
         return f'Running (pid file: {PID_FILE})'
     return 'Stopped'
 
-
 def read_tail(path, lines=120):
     try:
         if not path.exists():
@@ -173,10 +170,8 @@ def read_tail(path, lines=120):
         log_error(f'read_tail failed for {path}: {e}')
         return ''
 
-
 def esc(v):
     return html.escape(str(v if v is not None else ''), quote=True)
-
 
 def save_from_form(form, cfg):
     cfg['mqtt'] = {
@@ -210,7 +205,6 @@ def save_from_form(form, cfg):
         })
     cfg['meters'] = meters
     save_config(cfg)
-
 
 def handle_action(form, cfg):
     msg = ''
@@ -271,13 +265,6 @@ def handle_action(form, cfg):
             msg = 'healthcheck.py not found.'
     return msg, cfg
 
-
-def tab_link(tab_data, active):
-    tab_id, tab_name, tab_icon = tab_data
-    cls = 'tab active' if tab_id == active else 'tab'
-    return f'<a class="{cls}" href="?tab={esc(tab_id)}"><i class="{esc(tab_icon)}"></i> {esc(tab_name)}</a>'
-
-
 def status_badge(text):
     lower = text.lower()
     cls = 'bad'
@@ -287,6 +274,29 @@ def status_badge(text):
         cls = 'warn'
     return f'<span class="badge {cls}">{esc(text)}</span>'
 
+def parse_discovery_log(log_path: Path) -> list[dict]:
+    meters = {}
+    try:
+        if not log_path.exists():
+            return []
+        content = log_path.read_text(encoding='utf-8', errors='replace').splitlines()
+        for line in content:
+            line = line.strip()
+            if line.startswith('{') and line.endswith('}'):
+                try:
+                    data = json.loads(line)
+                    meter_id = str(data.get('id'))
+                    if meter_id and data.get('meter_type'):
+                        meters[meter_id] = {
+                            'id': meter_id,
+                            'driver': data.get('meter_type'),
+                            'key': data.get('key', '') # wmbusmeters might provide this
+                        }
+                except json.JSONDecodeError:
+                    pass
+    except Exception as e:
+        log_error(f'parse_discovery_log failed for {log_path}: {e}')
+    return list(meters.values())
 
 def render_overview(cfg):
     mqtt_live = resolve_mqtt_settings(cfg)
@@ -350,7 +360,6 @@ def render_overview(cfg):
     {health_check_html}
     '''
 
-
 def render_mqtt(cfg):
     return f'''
     <div class="card narrow">
@@ -371,7 +380,6 @@ def render_mqtt(cfg):
       </div>
     </div>
     '''
-
 
 def render_radio(cfg):
     radio = cfg['radio']
@@ -423,7 +431,6 @@ def render_radio(cfg):
     </div>
     '''
 
-
 def render_meters(cfg):
     cards = []
     for i, meter in enumerate(cfg.get('meters', [])):
@@ -452,7 +459,6 @@ def render_meters(cfg):
         ''')
     return f'''<div class="hint">Run discovery first. Start requires IDs for every enabled meter.</div>{''.join(cards)}<div class="button-row"><button name="action" value="save">Save</button><button name="action" value="start">Save & Start</button></div>'''
 
-
 def parse_discovery_log(log_path: Path) -> list[dict]:
     meters = {}
     try:
@@ -476,7 +482,6 @@ def parse_discovery_log(log_path: Path) -> list[dict]:
     except Exception as e:
         log_error(f'parse_discovery_log failed for {log_path}: {e}')
     return list(meters.values())
-
 
 def render_discovery(cfg):
     bridge_log = read_tail(LOG_FILE, 80)
@@ -571,18 +576,18 @@ def render_discovery(cfg):
     </div>
     '''
 
-
 def main():
     try:
         form = get_form()
         cfg = load_config()
-        active_tab = form.get('tab', 'overview') if form.get('tab', 'overview') in dict(TABS) else 'overview'
+        # Get active tab from environment variable set by Perl wrapper
+        active_tab = os.environ.get('LB_ACTIVE_TAB', 'overview')
+        
         message = ''
         if form.get('action'):
             message, cfg = handle_action(form, cfg)
-            if form.get('tab') in dict(TABS):
-                active_tab = form['tab']
-        mqtt_live = resolve_mqtt_settings(cfg)
+            # Re-read active tab in case action changed it (e.g., "Add to Meters")
+            active_tab = form.get('tab', active_tab)
 
         sections = {
             'overview': render_overview(cfg),
@@ -596,78 +601,23 @@ def main():
             for key, html in sections.items()
         )
 
-        print('Content-Type: text/html; charset=utf-8\n')
-        print(f'''<!DOCTYPE html>
-<html lang="en">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>wM-Bus Heat Meter Bridge</title>
-<style>
-:root {{ --green:#73b11b; --dark:#303030; --light:#f5f5f5; --border:#d7d7d7; --blue:#2d6cdf; }}
-body {{ font-family: Arial, Helvetica, sans-serif; margin:0; background:#efefef; color:#222; }}
-.topbar {{ background:var(--green); color:#fff; padding:10px 16px; display:flex; justify-content:space-between; align-items:center; }}
-.topbar a {{ color:#fff; text-decoration:none; margin-right:14px; font-weight:bold; display:flex; align-items:center; gap: 5px; }}
-.topbar a i {{ font-size: 1.5em; }}
-.topbar a span {{ /* For screen readers, hide visually */ position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }}
-.subtitle {{ font-size:13px; opacity:0.95; }}
-.tabbar {{ background:#353535; padding:0 16px; display:flex; gap:0; overflow:auto; }}
-.tab {{ color:#fff; text-decoration:none; padding:14px 18px; display:inline-flex; flex-direction: column; align-items: center; justify-content: center; border-bottom:3px solid transparent; font-weight:bold; white-space:nowrap; }}
-.tab i {{ font-size: 1.5em; margin-bottom: 5px; }}
-.tab.active {{ background:#444; border-bottom-color:var(--green); }}
-.container {{ max-width:1400px; margin:0 auto; padding:18px; }}
-.card {{ background:#fff; border:1px solid var(--border); border-radius:8px; padding:18px; margin-bottom:18px; box-shadow:0 1px 2px rgba(0,0,0,0.04); }}
-.card.narrow {{ max-width:980px; }}
-.grid.two {{ display:grid; grid-template-columns:1fr 1fr; gap:18px; }}
-.grid.two.compactgrid {{ gap:14px 18px; }}
-label {{ display:block; font-weight:bold; margin-bottom:10px; }}
-input[type=text], input[type=number], select {{ width:100%; padding:10px 12px; border:1px solid #bfc6ce; border-radius:6px; box-sizing:border-box; margin-top:6px; font-size:15px; }}
-.checkbox {{ font-weight:normal; display:flex; align-items:center; gap:8px; margin-top:18px; }}
-.checkbox input {{ margin:0; }}
-.button-row {{ display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }}
-button, .linkbtn {{ background:var(--green); color:#fff; border:none; border-radius:6px; padding:10px 14px; font-weight:bold; cursor:pointer; text-decoration:none; display:inline-block; }}
-button.secondary, .linkbtn.secondary {{ background:#666; }}
-.linkrow .linkbtn {{ background:#2d6cdf; display:flex; align-items:center; gap: 5px; }}
-.linkrow .linkbtn i {{ font-size: 1.2em; }}
-pre {{ background:#10151a; color:#dbe7f3; padding:14px; border-radius:8px; overflow:auto; white-space:pre-wrap; word-break:break-word; max-height:420px; }}
-table.compact {{ border-collapse:collapse; width:100%; }}
-table.compact th, table.compact td {{ border:1px solid #d9d9d9; padding:9px 10px; text-align:left; }}
-table.compact th {{ background:#fafafa; }}
-.status {{ color:#127d00; font-weight:bold; }}
-.badge {{ display:inline-block; padding:4px 10px; border-radius:999px; font-weight:bold; font-size:13px; }}
-.badge.good {{ background:#e9f7e7; color:#127d00; }}
-.badge.warn {{ background:#fff5d6; color:#8b6500; }}
-.badge.bad {{ background:#fde9e9; color:#b00020; }}
-.notice {{ background:#edf7ed; border:1px solid #b8d8b8; color:#234523; padding:12px 14px; border-radius:8px; margin-bottom:18px; }}
-.hint {{ background:#f7f7f7; border:1px dashed #bdbdbd; padding:12px 14px; margin-bottom:18px; border-radius:8px; }}
-.footerhint {{ color:#444; font-size:13px; margin-top:8px; }}
-@media (max-width: 980px) {{ .grid.two {{ grid-template-columns:1fr; }} .container {{ padding:12px; }} }}
-</style>
-</head>
-<body>
-<div class="topbar">
-  <div>
-    <a href="{esc(admin_home_url())}" target="_blank"><i class="fa fa-home"></i> LoxBerry Home</a>
-    <a href="{esc(plugin_overview_url())}" target="_blank"><i class="fa fa-puzzle-piece"></i> Plugins</a>
-    <a href="{esc(mqtt_widget_url())}" target="_blank"><i class="fa fa-wifi"></i> MQTT Widget</a>
-  </div>
-  <div class="subtitle">wM-Bus Heat Meter Bridge • MQTT source: {esc(mqtt_live.get('source', 'unknown'))}</div>
-</div>
-<div class="tabbar">{''.join(tab_link(tab_data, active_tab) for tab_data in TABS)}</div>
-<div class="container">
-  <form method="post" action="index.cgi">
+        # Output only the content. Perl wrapper will handle headers, footers, etc.
+        # We also pass the message so the Perl wrapper can display it
+        # LoxBerry uses ui-corner-all ui-shadow ui-bar-a for notices
+        notice_html = f'<div class="ui-corner-all ui-shadow ui-bar-a" style="display: {'block' if message else 'none'}; margin-bottom: 1em;"><p>{esc(message)}</p></div>' if message else ''
+        
+        print(f'''
+{notice_html}
+<form method="post" action="{os.environ.get('SCRIPT_NAME', 'index.cgi')}">
     <input type="hidden" name="tab" value="{esc(active_tab)}">
     <h1>wM-Bus Heat Meter Bridge</h1>
-    {f'<div class="notice">{esc(message)}</div>' if message else ''}
     {body}
     <p class="footerhint">Broker settings come from the LoxBerry MQTT widget. Configure only the topic prefix here. Discovery works without meter IDs; the bridge start requires IDs for enabled meters.</p>
-  </form>
-</div>
-</body>
-</html>''')
+</form>''')
+
     except Exception as e:
         log_error(f'Fatal UI error: {e}')
-        print('Content-Type: text/plain; charset=utf-8\n')
+        # In case of fatal error, print a plain text error message for debugging
         print(f'UI error: {e}')
 
 
