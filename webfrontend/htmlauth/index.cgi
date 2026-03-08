@@ -21,6 +21,13 @@ use File::Basename;
 # Variables
 ##########################################################################
 
+my $post_data_buffer = "";
+if ($ENV{'REQUEST_METHOD'} && $ENV{'REQUEST_METHOD'} eq 'POST') {
+    if (defined $ENV{'CONTENT_LENGTH'} && $ENV{'CONTENT_LENGTH'} > 0) {
+        read(STDIN, $post_data_buffer, $ENV{'CONTENT_LENGTH'});
+    }
+}
+
 our $template;
 our $lbplogdir = $ENV{'LBPLOGDIR'};
 our $lbphtmldir = $ENV{'LBPHTMLDIR'};
@@ -35,7 +42,12 @@ our $log = LoxBerry::Log->new (
 );
 
 our $plugin = LoxBerry::System::plugindata();
-our $q = CGI->new;
+our $q;
+if ($post_data_buffer) {
+    $q = CGI->new($post_data_buffer);
+} else {
+    $q = CGI->new();
+}
 
 # Read the active tab from the query string (e.g., ?tab=overview)
 my $active_tab = $q->param('tab') || 'overview';
@@ -70,17 +82,12 @@ my $content_output = '';
 my $python_exit_code = 0;
 
 if ($ENV{'REQUEST_METHOD'} && $ENV{'REQUEST_METHOD'} eq 'POST') {
-    my $post_data = "";
-    if (defined $ENV{'CONTENT_LENGTH'} && $ENV{'CONTENT_LENGTH'} > 0) {
-        read(STDIN, $post_data, $ENV{'CONTENT_LENGTH'});
-    }
-    
     # Execute Python script and pipe POST data to its STDIN
     open(my $pipe, '|-', "/usr/bin/env python3 $content_script_path > /tmp/wmbusmetersbridge_content.out 2>&1") or do {
         LOGCRIT "Cannot open pipe to Python content script: $!";
         die "Cannot open pipe to Python content script: $!";
     };
-    print $pipe $post_data;
+    print $pipe $post_data_buffer;
     close($pipe);
     $python_exit_code = $? >> 8;
     
