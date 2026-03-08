@@ -1,9 +1,190 @@
-name: Release Plugin\n\non:\n  workflow_dispatch:\n    inputs:\n      new_version:\n        description: \"New plugin version (e.g. 0.3.6)\"\n        required: true\n        type: string\n\npermissions:\n  contents: write\n\nconcurrency:\n  group: release-plugin\n  cancel-in-progress: false\n\njobs:\n  release:\n    runs-on: ubuntu-latest\n\n    env:\n      PLUGIN_DIR: loxberry-wmbusmeters-plugin\n\n    steps:\n      - name: Checkout code\n        uses: actions/checkout@v4\n        with:\n          fetch-depth: 0\n\n      - name: Validate version input\n        run: |\n          set -euo pipefail\n          VERSION=\"${{ inputs.new_version }}\"\n          if ! [[ \"$VERSION\" =~ ^[0-9]+\\.[0-9]+\\.[0-9]+$ ]]; then\n            echo \"Invalid version: $VERSION\"\n            echo \"Expected format: X.Y.Z\"\n            exit 1\n          fi\n\n      - name: Debug repo structure\n        run: |\n          set -euo pipefail\n          pwd\n          ls -la\n\n      - name: Install required packages\n        run: |\n          set -euo pipefail\n          sudo apt-get update\n          sudo apt-get install -y zip rsync\n\n      - name: Read plugin metadata\n        id: meta\n        run: |\n          set -euo pipefail\n\n          if [ ! -f \"plugin.cfg\" ]; then\n            echo \"plugin.cfg not found in repository root\"\n            exit 1\n          fi\n\n          PLUGIN_NAME=\"$(grep \'^NAME=\' plugin.cfg | cut -d\'=\' -f2-)\"\n          PLUGIN_FOLDER=\"$(grep \'^FOLDER=\' plugin.cfg | cut -d\'=\' -f2-)\"\n          CURRENT_VERSION=\"$(grep \'^VERSION=\' plugin.cfg | cut -d'=' -f2-)\"\n\n          if [ -z \"$PLUGIN_NAME\" ] || [ -z \"$PLUGIN_FOLDER\" ] || [ -z \"$CURRENT_VERSION\" ]; then\n            echo \"plugin.cfg is missing NAME, FOLDER, or VERSION\"\n            exit 1\n          fi\n\n          echo \"plugin_name=$PLUGIN_NAME\" >> \"$GITHUB_OUTPUT\"\n          echo \"plugin_folder=$PLUGIN_FOLDER\" >> \"$GITHUB_OUTPUT\"\n          echo \"current_version=$CURRENT_VERSION\" >> \"$GITHUB_OUTPUT\"\n\n          echo \"Plugin: $PLUGIN_NAME\"\n          echo \"Folder: $PLUGIN_FOLDER\"\n          echo \"Current version: $CURRENT_VERSION\"\n\n      - name: Ensure tag does not already exist\n        run: |\n          set -euo pipefail\n          TAG=\"v${{ inputs.new_version }}\"\n          if git rev-parse \"$TAG\" >/dev/null 2>&1; then\n            echo \"Tag $TAG already exists\"\n            exit 1\n          fi\n\n      - name: Update plugin.cfg version\n        run: |\n          set -euo pipefail\n          NEW_VERSION=\"${{ inputs.new_version }}\"\n          sed -i \"s/^VERSION=.*/VERSION=$NEW_VERSION/\" plugin.cfg\n          echo \"Updated plugin.cfg to $NEW_VERSION\"\n\n      - name: Build release ZIP\n        id: zip\n        run: |\n          set -euo pipefail\n\n          NEW_VERSION=\"${{ inputs.new_version }}\"\n          PLUGIN_FOLDER=\"${{ steps.meta.outputs.plugin_folder }}\"\n          ZIP_FILE_NAME=\"${PLUGIN_FOLDER}-${NEW_VERSION}.zip\"\n\n          TEMP_DIR=\"$(mktemp -d)\"\n          STAGE_DIR=\"$TEMP_DIR/$PLUGIN_FOLDER\"\n          mkdir -p \"$STAGE_DIR\"\n\n          rsync -a ./ \"$STAGE_DIR/\" \\\n            --exclude \'.git/\' \\\n            --exclude \'.github/\' \\\
-            --exclude \"$ZIP_FILE_NAME\" \\\
-            --exclude \'*.pyc\' \\\
-            --exclude \'__pycache__/\' \\\
-            --exclude \'.pytest_cache/\' \\\
-            --exclude \'.DS_Store\' \\\
-            --exclude \'.idea/\' \\\
-            --exclude \'.venv/\' \\\
-            --exclude \'node_modules/\'\n\n          (\n            cd \"$TEMP_DIR\"\n            zip -r \"$GITHUB_WORKSPACE/$ZIP_FILE_NAME\" \"$PLUGIN_FOLDER\"\n          )\n\n          MD5_CHECKSUM=\"$(md5sum \"$ZIP_FILE_NAME\" | awk \'{print $1}\')\"\n          SHA256_CHECKSUM=\"$(sha256sum \"$ZIP_FILE_NAME\" | awk \'{print $1}\')\"\n\n          echo \"zip_file=$ZIP_FILE_NAME\" >> \"$GITHUB_OUTPUT\"\n          echo \"md5=$MD5_CHECKSUM\" >> \"$GITHUB_OUTPUT\"\n          echo \"sha256=$SHA256_CHECKSUM\" >> \"$GITHUB_OUTPUT\"\n\n          echo \"Created $ZIP_FILE_NAME\"\n          echo \"MD5: $MD5_CHECKSUM\"\n          echo \"SHA256: $SHA256_CHECKSUM\"\n\n      - name: Update release.cfg\n        run: |\n          set -euo pipefail\n\n          NEW_VERSION=\"${{ inputs.new_version }}\"\n          ZIP_FILE=\"${{ steps.zip.outputs.zip_file }}\"\n          MD5_CHECKSUM=\"${{ steps.zip.outputs.md5 }}\"\n          INFO_URL=\"https://github.com/${{ github.repository }}/releases/tag/v${NEW_VERSION}\"\n          DOWNLOAD_URL=\"https://github.com/${{ github.repository }}/releases/download/v${NEW_VERSION}/${ZIP_FILE}\"\n\n          if [ ! -f \"release.cfg\" ]; then\n            echo \"release.cfg not found in repository root\"\n            exit 1\n          fi\n\n          sed -i \"s/^VERSION=.*/VERSION=$NEW_VERSION/\" release.cfg\n          sed -i \"s/^MD5=.*/MD5=$MD5_CHECKSUM/\" release.cfg\n          sed -i \"s|^URL=.*|URL=$DOWNLOAD_URL|\" release.cfg\n          sed -i \"s|^INFOURL=.*|INFOURL=$INFO_URL|\" release.cfg\n\n          echo \"Updated release.cfg\"\n\n      - name: Commit updated config files\n        run: |\n          set -euo pipefail\n\n          git config user.name \"github-actions[bot]\"\n          git config user.email \"41898282+github-actions[bot]@users.noreply.github.com\"\n\n          git add plugin.cfg release.cfg\n\n          if git diff --cached --quiet; then\n            echo \"No changes to commit\"\n          else\n            git commit -m \"ci: release v${{ inputs.new_version }}\"\n            git push origin HEAD:main\n          fi\n\n      - name: Create GitHub release\n        uses: softprops/action-gh-release@v2\n        with:\n          tag_name: v${{ inputs.new_version }}\n          target_commitish: main\n          name: Release v${{ inputs.new_version }}\n          body: |\n            Automated release for version ${{ inputs.new_version }}.\n\n            Asset:\n            - ${{ steps.zip.outputs.zip_file }}\n\n            Checksums:\n            - MD5: ${{ steps.zip.outputs.md5 }}\n            - SHA256: ${{ steps.zip.outputs.sha256 }}\n          files: |\n            ${{ steps.zip.outputs.zip_file }}\n        env:\n          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}\n
+name: Release Plugin
+
+on:
+  workflow_dispatch:
+    inputs:
+      new_version:
+        description: "New plugin version (e.g. 0.3.6)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release-plugin
+  cancel-in-progress: false
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Validate version input
+        run: |
+          set -euo pipefail
+          VERSION="${{ inputs.new_version }}"
+          if ! [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "Invalid version: $VERSION"
+            echo "Expected format: X.Y.Z"
+            exit 1
+          fi
+
+      - name: Debug repo structure
+        run: |
+          set -euo pipefail
+          pwd
+          ls -la
+
+      - name: Install required packages
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install -y zip rsync
+
+      - name: Read plugin metadata
+        id: meta
+        run: |
+          set -euo pipefail
+
+          if [ ! -f "plugin.cfg" ]; then
+            echo "plugin.cfg not found in repository root"
+            exit 1
+          fi
+
+          PLUGIN_NAME="$(grep '^NAME=' plugin.cfg | cut -d'=' -f2-)"
+          PLUGIN_FOLDER="$(grep '^FOLDER=' plugin.cfg | cut -d'=' -f2-)"
+          CURRENT_VERSION="$(grep '^VERSION=' plugin.cfg | cut -d'=' -f2-)"
+
+          if [ -z "$PLUGIN_NAME" ] || [ -z "$PLUGIN_FOLDER" ] || [ -z "$CURRENT_VERSION" ]; then
+            echo "plugin.cfg is missing NAME, FOLDER, or VERSION"
+            exit 1
+          fi
+
+          echo "plugin_name=$PLUGIN_NAME" >> "$GITHUB_OUTPUT"
+          echo "plugin_folder=$PLUGIN_FOLDER" >> "$GITHUB_OUTPUT"
+          echo "current_version=$CURRENT_VERSION" >> "$GITHUB_OUTPUT"
+
+          echo "Plugin: $PLUGIN_NAME"
+          echo "Folder: $PLUGIN_FOLDER"
+          echo "Current version: $CURRENT_VERSION"
+
+      - name: Ensure tag does not already exist
+        run: |
+          set -euo pipefail
+          TAG="v${{ inputs.new_version }}"
+          if git rev-parse "$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists"
+            exit 1
+          fi
+
+      - name: Update plugin.cfg version
+        run: |
+          set -euo pipefail
+          NEW_VERSION="${{ inputs.new_version }}"
+          sed -i "s/^VERSION=.*/VERSION=$NEW_VERSION/" plugin.cfg
+          echo "Updated plugin.cfg to $NEW_VERSION"
+
+      - name: Build release ZIP
+        id: zip
+        run: |
+          set -euo pipefail
+
+          NEW_VERSION="${{ inputs.new_version }}"
+          PLUGIN_FOLDER="${{ steps.meta.outputs.plugin_folder }}"
+          ZIP_FILE_NAME="${PLUGIN_FOLDER}-${NEW_VERSION}.zip"
+
+          TEMP_DIR="$(mktemp -d)"
+          STAGE_DIR="$TEMP_DIR/$PLUGIN_FOLDER"
+          mkdir -p "$STAGE_DIR"
+
+          rsync -a ./ "$STAGE_DIR/" \
+            --exclude '.git/' \
+            --exclude '.github/' \
+            --exclude "$ZIP_FILE_NAME" \
+            --exclude '*.pyc' \
+            --exclude '__pycache__/' \
+            --exclude '.pytest_cache/' \
+            --exclude '.DS_Store' \
+            --exclude '.idea/' \
+            --exclude '.venv/' \
+            --exclude 'node_modules/'
+
+          (
+            cd "$TEMP_DIR"
+            zip -r "$GITHUB_WORKSPACE/$ZIP_FILE_NAME" "$PLUGIN_FOLDER"
+          )
+
+          MD5_CHECKSUM="$(md5sum "$ZIP_FILE_NAME" | awk '{print $1}')"
+          SHA256_CHECKSUM="$(sha256sum "$ZIP_FILE_NAME" | awk '{print $1}')"
+
+          echo "zip_file=$ZIP_FILE_NAME" >> "$GITHUB_OUTPUT"
+          echo "md5=$MD5_CHECKSUM" >> "$GITHUB_OUTPUT"
+          echo "sha256=$SHA256_CHECKSUM" >> "$GITHUB_OUTPUT"
+
+          echo "Created $ZIP_FILE_NAME"
+          echo "MD5: $MD5_CHECKSUM"
+          echo "SHA256: $SHA256_CHECKSUM"
+
+      - name: Update release.cfg
+        run: |
+          set -euo pipefail
+
+          NEW_VERSION="${{ inputs.new_version }}"
+          ZIP_FILE="${{ steps.zip.outputs.zip_file }}"
+          MD5_CHECKSUM="${{ steps.zip.outputs.md5 }}"
+          INFO_URL="https://github.com/${{ github.repository }}/releases/tag/v${NEW_VERSION}"
+          DOWNLOAD_URL="https://github.com/${{ github.repository }}/releases/download/v${NEW_VERSION}/${ZIP_FILE}"
+
+          if [ ! -f "release.cfg" ]; then
+            echo "release.cfg not found in repository root"
+            exit 1
+          fi
+
+          sed -i "s/^VERSION=.*/VERSION=$NEW_VERSION/" release.cfg
+          sed -i "s/^MD5=.*/MD5=$MD5_CHECKSUM/" release.cfg
+          sed -i "s|^URL=.*|URL=$DOWNLOAD_URL|" release.cfg
+          sed -i "s|^INFOURL=.*|INFOURL=$INFO_URL|" release.cfg
+
+          echo "Updated release.cfg"
+
+      - name: Commit updated config files
+        run: |
+          set -euo pipefail
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git add plugin.cfg release.cfg
+
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "ci: release v${{ inputs.new_version }}"
+            git push origin HEAD:main
+          fi
+
+      - name: Create GitHub release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.new_version }}
+          target_commitish: main
+          name: Release v${{ inputs.new_version }}
+          body: |
+            Automated release for version ${{ inputs.new_version }}.
+
+            Asset:
+            - ${{ steps.zip.outputs.zip_file }}
+
+            Checksums:
+            - MD5: ${{ steps.zip.outputs.md5 }}
+            - SHA256: ${{ steps.zip.outputs.sha256 }}
+          files: |
+            ${{ steps.zip.outputs.zip_file }}
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
