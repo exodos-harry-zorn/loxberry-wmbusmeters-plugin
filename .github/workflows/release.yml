@@ -125,3 +125,4 @@ jobs:
           branch: main # Or your default branch
           file_pattern: 'loxberry-wmbusmeters-plugin/plugin.cfg loxberry-wmbusmeters-plugin/release.cfg'
           token: ${{ secrets.GH_TOKEN }}
+          token: ${{ secrets.GH_TOKEN }}
