@@ -32,8 +32,15 @@ DISCOVERY_LOG = TMP_DIR / 'discovery.log'
 DEPS_LOG = TMP_DIR / 'deps_install.log'
 PID_FILE = TMP_DIR / 'bridge.pid'
 
-# Ensure common.py is importable. It should be in BIN_DIR, which is in sys.path
-sys.path.insert(0, str(BIN_DIR))
+# Ensure common.py is importable. Try standard LBPBINDIR, fallback to relative.
+if 'LBPBINDIR' in os.environ:
+    BIN_DIR_FOR_IMPORT = Path(os.environ['LBPBINDIR'])
+elif 'LBP_BINDIR' in os.environ:
+    BIN_DIR_FOR_IMPORT = Path(os.environ['LBP_BINDIR'])
+else:
+    BIN_DIR_FOR_IMPORT = BIN_DIR
+
+sys.path.insert(0, str(BIN_DIR_FOR_IMPORT))
 from common import resolve_mqtt_settings, mqtt_widget_url, admin_home_url, plugin_overview_url, HEALTHCHECK_FILE # type: ignore
 
 def read_health_check_status():
