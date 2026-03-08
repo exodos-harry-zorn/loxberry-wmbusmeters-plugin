@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       new_version:
-        description: 'New plugin version (e.g., 0.3.6)'
+        description: 'New plugin version (e.g., 0.3.9)'
         required: true
 
 permissions:
@@ -124,5 +124,4 @@ jobs:
           commit_message: 'ci: Automated release for v${{ github.event.inputs.new_version }}'
           branch: main # Or your default branch
           file_pattern: 'loxberry-wmbusmeters-plugin/plugin.cfg loxberry-wmbusmeters-plugin/release.cfg'
-          token: ${{ secrets.GH_TOKEN }}
           token: ${{ secrets.GH_TOKEN }}
