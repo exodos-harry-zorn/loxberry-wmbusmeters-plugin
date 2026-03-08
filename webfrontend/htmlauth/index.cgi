@@ -24,6 +24,7 @@ use File::Basename;
 our $template;
 our $lbplogdir = $ENV{'LBPLOGDIR'};
 our $lbphtmldir = $ENV{'LBPHTMLDIR'};
+our $lbpbindir = $ENV{'LBPBINDIR'} || "/opt/loxberry/bin/plugins/loxberry-wmbusmeters";
 
 my $pluginlogfile = "wmbusmetersbridge_ui.log";
 our $log = LoxBerry::Log->new (
@@ -58,9 +59,10 @@ LOGSTART "wmbusmetersbridge UI";
 $ENV{'LB_ACTIVE_TAB'} = $active_tab;
 
 # Set environment variables for Python script to access LoxBerry paths
-$ENV{'LBP_CONFIGDIR'} = $ENV{'LBPCONFIGDIR'};
-$ENV{'LBP_BINDIR'} = $ENV{'LBPBINDIR'};
-$ENV{'LBP_TMPDIR'} = $ENV{'LBPTMPDIR'};
+$ENV{'LBP_CONFIGDIR'} = $ENV{'LBPCONFIGDIR'} if defined $ENV{'LBPCONFIGDIR'};
+$ENV{'LBP_BINDIR'} = $ENV{'LBPBINDIR'} if defined $ENV{'LBPBINDIR'};
+$ENV{'LBP_TMPDIR'} = $ENV{'LBPTMPDIR'} if defined $ENV{'LBPTMPDIR'};
+$ENV{'LBPBINDIR'} = $lbpbindir if defined $lbpbindir;
 
 # content.py is now in the same directory as this index.cgi
 my $content_script_path = dirname($0) . "/content.py";
