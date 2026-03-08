@@ -28,11 +28,11 @@ sys.path.insert(0, str(BIN_DIR))
 from common import resolve_mqtt_settings, mqtt_widget_url, admin_home_url, plugin_overview_url, HEALTHCHECK_FILE  # type: ignore
 
 TABS = [
-    ("overview", "Overview"),
-    ("mqtt", "MQTT"),
-    ("radio", "Radio"),
-    ("meters", "Meters"),
-    ("discovery", "Discovery & Logs"),
+    ("overview", "Overview", "fa fa-tachometer-alt"),
+    ("mqtt", "MQTT", "fa fa-wifi"),
+    ("radio", "Radio", "fa fa-broadcast-tower"),
+    ("meters", "Meters", "fa fa-thermometer-half"),
+    ("discovery", "Discovery & Logs", "fa fa-search"),
 ]
 
 def read_health_check_status():
@@ -272,9 +272,10 @@ def handle_action(form, cfg):
     return msg, cfg
 
 
-def tab_link(tab, active):
-    cls = 'tab active' if active else 'tab'
-    return f'<a class="{cls}" href="?tab={esc(tab)}">{esc(dict(TABS)[tab])}</a>'
+def tab_link(tab_data, active):
+    tab_id, tab_name, tab_icon = tab_data
+    cls = 'tab active' if tab_id == active else 'tab'
+    return f'<a class="{cls}" href="?tab={esc(tab_id)}"><i class="{esc(tab_icon)}"></i> {esc(tab_name)}</a>'
 
 
 def status_badge(text):
@@ -606,10 +607,13 @@ def main():
 :root {{ --green:#73b11b; --dark:#303030; --light:#f5f5f5; --border:#d7d7d7; --blue:#2d6cdf; }}
 body {{ font-family: Arial, Helvetica, sans-serif; margin:0; background:#efefef; color:#222; }}
 .topbar {{ background:var(--green); color:#fff; padding:10px 16px; display:flex; justify-content:space-between; align-items:center; }}
-.topbar a {{ color:#fff; text-decoration:none; margin-right:14px; font-weight:bold; }}
+.topbar a {{ color:#fff; text-decoration:none; margin-right:14px; font-weight:bold; display:flex; align-items:center; gap: 5px; }}
+.topbar a i {{ font-size: 1.5em; }}
+.topbar a span {{ /* For screen readers, hide visually */ position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0, 0, 0, 0); border: 0; }}
 .subtitle {{ font-size:13px; opacity:0.95; }}
 .tabbar {{ background:#353535; padding:0 16px; display:flex; gap:0; overflow:auto; }}
-.tab {{ color:#fff; text-decoration:none; padding:14px 18px; display:inline-block; border-bottom:3px solid transparent; font-weight:bold; white-space:nowrap; }}
+.tab {{ color:#fff; text-decoration:none; padding:14px 18px; display:inline-flex; flex-direction: column; align-items: center; justify-content: center; border-bottom:3px solid transparent; font-weight:bold; white-space:nowrap; }}
+.tab i {{ font-size: 1.5em; margin-bottom: 5px; }}
 .tab.active {{ background:#444; border-bottom-color:var(--green); }}
 .container {{ max-width:1400px; margin:0 auto; padding:18px; }}
 .card {{ background:#fff; border:1px solid var(--border); border-radius:8px; padding:18px; margin-bottom:18px; box-shadow:0 1px 2px rgba(0,0,0,0.04); }}
@@ -623,7 +627,8 @@ input[type=text], input[type=number], select {{ width:100%; padding:10px 12px; b
 .button-row {{ display:flex; gap:10px; flex-wrap:wrap; margin-top:12px; }}
 button, .linkbtn {{ background:var(--green); color:#fff; border:none; border-radius:6px; padding:10px 14px; font-weight:bold; cursor:pointer; text-decoration:none; display:inline-block; }}
 button.secondary, .linkbtn.secondary {{ background:#666; }}
-.linkrow .linkbtn {{ background:#2d6cdf; }}
+.linkrow .linkbtn {{ background:#2d6cdf; display:flex; align-items:center; gap: 5px; }}
+.linkrow .linkbtn i {{ font-size: 1.2em; }}
 pre {{ background:#10151a; color:#dbe7f3; padding:14px; border-radius:8px; overflow:auto; white-space:pre-wrap; word-break:break-word; max-height:420px; }}
 table.compact {{ border-collapse:collapse; width:100%; }}
 table.compact th, table.compact td {{ border:1px solid #d9d9d9; padding:9px 10px; text-align:left; }}
@@ -648,7 +653,7 @@ table.compact th {{ background:#fafafa; }}
   </div>
   <div class="subtitle">wM-Bus Heat Meter Bridge • MQTT source: {esc(mqtt_live.get('source', 'unknown'))}</div>
 </div>
-<div class="tabbar">{''.join(tab_link(tab, tab == active_tab) for tab, _ in TABS)}</div>
+<div class="tabbar">{''.join(tab_link(tab_data, active_tab) for tab_data in TABS)}</div>
 <div class="container">
   <form method="post" action="index.cgi">
     <input type="hidden" name="tab" value="{esc(active_tab)}">
