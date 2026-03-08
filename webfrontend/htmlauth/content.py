@@ -318,10 +318,6 @@ def parse_discovery_log(log_path: Path) -> list[dict]:
     return list(meters.values())
 
 def render_overview(cfg):
-    mqtt_live = resolve_mqtt_settings(cfg)
-    rows = []
-    for k, ok in deps_status().items():
-        rows.append(f'<tr><td>{esc(k)}</td><td class="status">{"OK" if ok else "missing"}</td></tr>')
     meter_count = sum(1 for m in cfg.get('meters', []) if m.get('enabled'))
     configured_count = sum(1 for m in cfg.get('meters', []) if m.get('enabled') and m.get('id'))
 
@@ -336,53 +332,50 @@ def render_overview(cfg):
             <tr><th>wmbusmeters</th><td>{esc(health_status.get('wmbusmeters_status_text', 'N/A'))}</td></tr>
             <tr><th>RTL-SDR</th><td>{esc(health_status.get('rtl_sdr_status_text', 'N/A'))}</td></tr>
           </table>
-          <div class="button-row">
-            <button name="action" value="run_healthcheck" class="secondary">Re-run Health Check</button>
+          <div class="button-row" style="margin-top: 15px;">
+            <button data-inline="true" data-mini="true" name="action" value="run_healthcheck" class="secondary">Re-run Health Check</button>
           </div>
         </div>
         '''
 
+    dongles_html = get_connected_dongles_html()
+
     return f'''
+    <div class="card" style="margin-bottom: 20px; background: #eef5fb; border-left: 5px solid var(--blue);">
+      <h2><i class="fa fa-info-circle"></i> Welcome to the wM-Bus Heat Meter Bridge!</h2>
+      <p>This plugin connects your compatible wireless M-Bus (wM-Bus) meters to LoxBerry using an RTL-SDR USB dongle. 
+      It reads meter transmissions, translates them, and forwards the data into your MQTT broker for smart home integration.</p>
+      <p><strong>Quick Start:</strong> Ensure your SDR dongle is connected, configure your meter IDs in the <em>Meters</em> tab, and hit Start. 
+      If you don't know your meter IDs, use the <em>Discovery & Logs</em> tab to find them.</p>
+    </div>
+
     <div class="grid two">
       <div class="card">
-        <h2>Bridge</h2>
+        <h2>Bridge Control</h2>
         <p><strong>Status:</strong> {status_badge(service_status())}</p>
         <p><strong>Dependency job:</strong> {status_badge(dependency_job_status())}</p>
         <p><strong>Meters enabled:</strong> {meter_count} &nbsp; <strong>Configured IDs:</strong> {configured_count}</p>
-        <div class="button-row">
-          <button name="action" value="start">Start</button>
-          <button name="action" value="restart">Restart</button>
-          <button name="action" value="stop" class="secondary">Stop</button>
-          <button name="action" value="install_deps" class="secondary">Repair / update dependencies</button>
+        <div class="button-row" style="margin-top: 15px;">
+          <button data-inline="true" data-mini="true" name="action" value="start">Start</button>
+          <button data-inline="true" data-mini="true" name="action" value="restart">Restart</button>
+          <button data-inline="true" data-mini="true" name="action" value="stop" class="secondary">Stop</button>
         </div>
       </div>
+      
       <div class="card">
-        <h2>MQTT widget integration</h2>
-        <p>This plugin uses the LoxBerry MQTT widget for broker and credential settings. Only the topic prefix is stored in this plugin.</p>
-        <table class="compact">
-          <tr><th>Broker source</th><td>{esc(mqtt_live.get('source', 'unknown'))}</td></tr>
-          <tr><th>Broker host</th><td>{esc(mqtt_live.get('host', '127.0.0.1'))}</td></tr>
-          <tr><th>Broker port</th><td>{esc(mqtt_live.get('port', 1883))}</td></tr>
-          <tr><th>Topic prefix</th><td>{esc(cfg.get('mqtt', {}).get('base_topic', 'wmbus/heat'))}</td></tr>
-        </table>
-        <div class="button-row linkrow">
-          <a class="linkbtn" target="_blank" href="{esc(mqtt_widget_url())}"><i class="fa fa-wifi"></i> Open MQTT Widget</a>
-          <a class="linkbtn" target="_blank" href="{esc(plugin_overview_url())}"><i class="fa fa-puzzle-piece"></i> Installed Plugins</a>
-          <a class="linkbtn" target="_blank" href="{esc(admin_home_url())}"><i class="fa fa-home"></i> LoxBerry Home</a>
-        </div>
+        <h2>Connected USB SDR Dongles</h2>
+        {dongles_html}
       </div>
     </div>
-    <div class="card">
-      <h2>Dependency status</h2>
-      <table class="compact"><tr><th>Component</th><th>Status</th></tr>{''.join(rows)}</table>
-    </div>
+    
     {health_check_html}
     '''
 
 def render_mqtt(cfg):
+    mqtt_live = resolve_mqtt_settings(cfg)
     return f'''
-    <div class="card narrow">
-      <h2>MQTT</h2>
+    <div class="card narrow" style="margin-bottom: 20px;">
+      <h2>MQTT Topic Settings</h2>
       <p>This plugin follows the LoxBerry MQTT widget. Broker host, port and credentials come from LoxBerry. Edit them in the MQTT widget; set only the topic prefix here.</p>
       <label>MQTT topic prefix
         <input type="text" name="mqtt_base_topic" value="{esc(cfg['mqtt'].get('base_topic', 'wmbus/heat'))}">
@@ -393,9 +386,21 @@ def render_mqtt(cfg):
         </label>
         <label class="checkbox"><input type="checkbox" name="mqtt_retain" {'checked' if cfg['mqtt'].get('retain', True) else ''}> Retain messages</label>
       </div>
-      <div class="button-row">
-        <button name="action" value="save">Save</button>
-        <a class="linkbtn" target="_blank" href="{esc(mqtt_widget_url())}">Open MQTT Widget</a>
+      <div class="button-row" style="margin-top: 15px;">
+        <button data-inline="true" data-mini="true" name="action" value="save">Save Settings</button>
+      </div>
+    </div>
+    
+    <div class="card narrow">
+      <h2>MQTT Widget Integration Details</h2>
+      <table class="compact">
+        <tr><th>Broker source</th><td>{esc(mqtt_live.get('source', 'unknown'))}</td></tr>
+        <tr><th>Broker host</th><td>{esc(mqtt_live.get('host', '127.0.0.1'))}</td></tr>
+        <tr><th>Broker port</th><td>{esc(mqtt_live.get('port', 1883))}</td></tr>
+        <tr><th>Resolved Topic</th><td>{esc(cfg['mqtt'].get('base_topic', 'wmbus/heat'))}</td></tr>
+      </table>
+      <div class="button-row linkrow" style="margin-top: 15px;">
+        <a class="linkbtn ui-btn ui-btn-inline ui-mini" target="_blank" href="{esc(mqtt_widget_url())}"><i class="fa fa-wifi"></i> Open MQTT Widget</a>
       </div>
     </div>
     '''
@@ -440,14 +445,9 @@ def get_connected_dongles_html():
 
 def render_radio(cfg):
     radio = cfg['radio']
-    dongles_html = get_connected_dongles_html()
     return f'''
     <div class="card narrow">
       <h2>Radio / RTL-SDR Setup</h2>
-      <div style="margin-bottom: 20px;">
-        <label>Connected USB SDR Dongles</label>
-        {dongles_html}
-      </div>
       <div class="grid two compactgrid">
         <label>Device
           <input type="text" name="radio_device" value="{esc(radio.get('device', 'rtlwmbus'))}">
@@ -598,6 +598,20 @@ def render_discovery(cfg):
     bridge_log = read_tail(LOG_FILE, 80)
     discovery_log = read_tail(DISCOVERY_LOG, 120)
     deps_log = read_tail(DEPS_LOG, 80)
+    
+    rows = []
+    for k, ok in deps_status().items():
+        rows.append(f'<tr><td>{esc(k)}</td><td class="status">{"OK" if ok else "missing"}</td></tr>')
+        
+    deps_html = f'''
+    <div class="card" style="margin-bottom: 20px;">
+      <h2>Dependency Status</h2>
+      <table class="compact"><tr><th>Component</th><th>Status</th></tr>{''.join(rows)}</table>
+      <div class="button-row" style="margin-top: 15px;">
+        <button data-inline="true" data-mini="true" name="action" value="install_deps" class="secondary">Repair / Update Dependencies</button>
+      </div>
+    </div>
+    '''
 
     discovered_meters = parse_discovery_log(DISCOVERY_LOG)
     discovered_meters_html = ''
@@ -678,6 +692,9 @@ def render_discovery(cfg):
         <pre>{esc(bridge_log or 'No bridge log yet.')}</pre>
       </div>
     </div>
+    
+    {deps_html}
+    
     <div class="card">
       <h2>Dependency installer log</h2>
       <pre>{esc(deps_log or 'No dependency installer log yet.')}</pre>
