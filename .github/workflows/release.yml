@@ -124,4 +124,3 @@ jobs:
           commit_message: 'ci: Automated release for v${{ github.event.inputs.new_version }}'
           branch: main # Or your default branch
           file_pattern: 'loxberry-wmbusmeters-plugin/plugin.cfg loxberry-wmbusmeters-plugin/release.cfg'
-          token: ${{ secrets.GH_TOKEN }}
