@@ -92,8 +92,7 @@ jobs:
             **Assets:**
             - ${{ steps.create_zip.outputs.ZIP_FILE_PATH }} (MD5: ${{ steps.create_zip.outputs.MD5_CHECKSUM }})
           files: ${{ steps.create_zip.outputs.ZIP_FILE_PATH }}
-        env:
-          GITHUB_TOKEN: ${{ secrets.GH_TOKEN }}
+        token: ${{ secrets.GH_TOKEN }}
 
       - name: Get Release Asset URL
         id: get_asset_url
@@ -125,5 +124,4 @@ jobs:
           commit_message: 'ci: Automated release for v${{ github.event.inputs.new_version }}'
           branch: main # Or your default branch
           file_pattern: 'loxberry-wmbusmeters-plugin/plugin.cfg loxberry-wmbusmeters-plugin/release.cfg'
-          # Ensure the GITHUB_TOKEN has write permissions. By default, it usually does.
-          # No need for --force, a regular push should work after auto-commit action
+          token: ${{ secrets.GH_TOKEN }}
