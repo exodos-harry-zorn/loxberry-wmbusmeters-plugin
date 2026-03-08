@@ -16,34 +16,16 @@ SUDOERS_DEST="/etc/sudoers.d/50-${PDIR}"
 log() { echo "<INFO> $*"; }
 warn() { echo "<WARNING> $*"; }
 fail() { echo "<ERROR> $*"; exit 1; }
-log "Root post-upgrade started"
-mkdir -p "$TMPDIR" "$PCONFIG"
-chmod 755 "$PBIN"/*.sh 2>/dev/null || true
-chmod 755 "$PHTMLAUTH"/*.cgi 2>/dev/null || true
-chmod 755 "$DAEMON_TARGET" 2>/dev/null || true
-mkdir -p /etc/sudoers.d
-if [ -f "$SUDOERS_TEMPLATE" ]; then
-  TMP_SUDOERS="$(mktemp)"
-  sed \
-    -e "s|REPLACEDAEMONPATH|$DAEMON_TARGET|g" \
-    -e "s|REPLACEINSTALLERPATH|$PBIN/install_deps.sh|g" \
-    "$SUDOERS_TEMPLATE" > "$TMP_SUDOERS"
-  chmod 440 "$TMP_SUDOERS"
-  if command -v visudo >/dev/null 2>&1; then
-    if visudo -c -f "$TMP_SUDOERS" >/dev/null 2>&1; then
-      install -m 440 "$TMP_SUDOERS" "$SUDOERS_DEST"
-      log "Installed sudoers rules to $SUDOERS_DEST"
-    else
-      rm -f "$TMP_SUDOERS"
-      fail "Generated sudoers file is invalid"
-    fi
-  else
-    install -m 440 "$TMP_SUDOERS" "$SUDOERS_DEST"
-    warn "visudo not found; installed sudoers rules without validation"
-  fi
-  rm -f "$TMP_SUDOERS"
-else
-  warn "sudoers template not found at $SUDOERS_TEMPLATE"
+log "User post-upgrade started"
+
+mkdir -p "$PCONFIG"
+if [ -d "/tmp/${PTEMPDIR}_upgrade/config/$PDIR" ]; then
+  log "Restoring existing config files from backup"
+  cp -p -v -r /tmp/${PTEMPDIR}_upgrade/config/$PDIR/* "$PCONFIG/" || true
+elif [ -d "/tmp/${PTEMPDIR}_upgrade/config" ]; then
+  # Fallback just in case the backup structure was slightly different
+  log "Restoring existing config files from fallback backup path"
+  cp -p -v -r /tmp/${PTEMPDIR}_upgrade/config/* "$PCONFIG/" || true
 fi
-log "Root post-upgrade finished"
+
 exit 0
