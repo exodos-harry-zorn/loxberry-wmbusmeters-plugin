@@ -195,12 +195,22 @@ def save_from_form(form, cfg):
 
     # Dynamically read meters from form data
     new_meters = []
-    i = 0
-    while True:
+    
+    # Collect all submitted meter indices
+    meter_indices = []
+    for k in form.keys():
+        if k.startswith('meter_') and k.endswith('_name'):
+            try:
+                idx = int(k.split('_')[1])
+                if idx not in meter_indices:
+                    meter_indices.append(idx)
+            except ValueError:
+                pass
+                
+    meter_indices.sort()
+    
+    for i in meter_indices:
         meter_name_key = f'meter_{i}_name'
-        if meter_name_key not in form:
-            break # No more meters found
-        
         meter = {
             'name': form.get(meter_name_key, '').strip() or f'meter_{i+1}',
             'label': form.get(f'meter_{i}_label', '').strip() or f'Meter {i+1}',
@@ -209,10 +219,9 @@ def save_from_form(form, cfg):
             'key': form.get(f'meter_{i}_key', '').strip(),
             'enabled': bool_from_form(form, f'meter_{i}_enabled')
         }
-        # Only add if at least name or ID is present, or if it's explicitly enabled
+        # Add if at least name or ID is present, or if it's explicitly enabled
         if meter['name'] or meter['id'] or meter['enabled']:
             new_meters.append(meter)
-        i += 1
     
     cfg['meters'] = new_meters
     save_config(cfg)
@@ -529,7 +538,7 @@ def render_meters(cfg):
             }});
         }}
 
-        $(document).on('pagecreate', '#page-wrapper', function() {{
+        $(function() {{
             // Initial binding for remove buttons (for already rendered meters)
             $('.remove-meter-btn').on('click', function() {{
                 $(this).closest('.meter-card').remove();
@@ -580,7 +589,7 @@ def render_discovery(cfg):
             </tbody>
         </table>
         <script>
-            $(document).on('pagecreate', '#page-wrapper', function() {{
+            $(function() {{
                 $('.add-discovered-meter-btn').on('click', function(event) {{
                     const meterId = $(this).data('meter-id');
                     const meterDriver = $(this).data('meter-driver');
@@ -652,7 +661,7 @@ def main():
             'discovery': render_discovery(cfg),
         }
         body = ''.join(
-            f'<div class="section {"active" if key == active_tab else "hidden"}" id="section-{key}">{html}</div>'
+            f'<div class="section" id="section-{key}" style="display: {"block" if key == active_tab else "none"};">{html}</div>'
             for key, html in sections.items()
         )
 
