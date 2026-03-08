@@ -622,7 +622,8 @@ def main():
             for key, html in sections.items()
         )
 
-        notice_html = f'<div class="ui-corner-all ui-shadow ui-bar-a" style="display: {'block' if message else 'none'}; margin-bottom: 1em;"><p>{esc(message)}</p></div>' if message else ''
+        display_style = 'block' if message else 'none'
+        notice_html = f'<div class="ui-corner-all ui-shadow ui-bar-a" style="display: {display_style}; margin-bottom: 1em;"><p>{esc(message)}</p></div>' if message else ''
         
         print(f'''
 {notice_html}
