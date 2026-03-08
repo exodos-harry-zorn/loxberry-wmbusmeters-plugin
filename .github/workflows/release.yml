@@ -57,7 +57,7 @@ jobs:
             exit 1
           fi
 
-          PLUGIN_NAME="$(awk -F'=' '$1==\"NAME\"{name=$2} END{print name}' plugin.cfg)"
+          PLUGIN_NAME="$(grep '^NAME=' plugin.cfg | tail -n 1 | cut -d'=' -f2-)"
           PLUGIN_FOLDER="$(grep '^FOLDER=' plugin.cfg | cut -d'=' -f2-)"
           CURRENT_VERSION="$(grep '^VERSION=' plugin.cfg | cut -d'=' -f2-)"
 
