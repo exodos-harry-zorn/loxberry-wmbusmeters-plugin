@@ -111,8 +111,7 @@ def bool_from_form(form, key):
 
 def shell(cmd, timeout=60):
     try:
-        with open(f"{LOG_FILE}", "a", encoding="utf-8") as log_output:
-            return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, stderr=log_output, stdout=log_output)
+        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
     except Exception as e:
         log_error(f'shell failed {cmd}: {e}')
         class Dummy:
