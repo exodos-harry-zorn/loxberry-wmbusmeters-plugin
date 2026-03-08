@@ -445,12 +445,27 @@ def get_connected_dongles_html():
 
 def render_radio(cfg):
     radio = cfg['radio']
+    
+    # Ensure current device is in the list, even if it's a custom path
+    current_device = radio.get('device', 'rtlwmbus')
+    device_options = [
+        ('rtlwmbus', 'RTL-SDR Dongle (Recommended)'),
+        ('auto', 'Auto-detect Device'),
+        ('/dev/ttyUSB0', 'Serial USB Dongle (ttyUSB0)'),
+        ('/dev/ttyUSB1', 'Serial USB Dongle (ttyUSB1)'),
+        ('/dev/ttyAMA0', 'Raspberry Pi GPIO (ttyAMA0)')
+    ]
+    if current_device not in [d[0] for d in device_options]:
+        device_options.insert(0, (current_device, f'Custom ({current_device})'))
+
     return f'''
     <div class="card narrow">
       <h2>Radio / RTL-SDR Setup</h2>
       <div class="grid two compactgrid">
-        <label>Device
-          <input type="text" name="radio_device" value="{esc(radio.get('device', 'rtlwmbus'))}">
+        <label>Device (Hardware Interface)
+          <select name="radio_device">
+            {''.join(f'<option value="{d[0]}" {"selected" if current_device == d[0] else ""}>{d[1]}</option>' for d in device_options)}
+          </select>
         </label>
         <label>Mode
           <select name="radio_mode">
