@@ -60,18 +60,12 @@ def default_config():
             'log_level': 'normal', 'log_telegrams': False, 'ignore_duplicates': True, 'discovery_seconds': 30,
             'meter_whitelist': [], 'meter_blacklist': []
         },
-        'meters': [
-            {'name': 'wohnung1', 'label': 'Wohnung 1', 'id': '', 'driver': 'sharky', 'key': '', 'enabled': True},
-            {'name': 'wohnung2', 'label': 'Wohnung 2', 'id': '', 'driver': 'sharky', 'key': '', 'enabled': True},
-            {'name': 'wohnung3', 'label': 'Wohnung 3', 'id': '', 'driver': 'sharky', 'key': '', 'enabled': True},
-        ]
+        'meters': [] # Start with an empty list for dynamic meters
     }
 
 def load_config():
-    # Use LoxBerry's CONFIG_FILE or EXAMPLE_FILE, updating with defaults
     path = CONFIG_FILE if CONFIG_FILE.exists() else EXAMPLE_FILE
     if not path.exists():
-        # If no config exists, create a default one
         CONFIG_DIR.mkdir(parents=True, exist_ok=True)
         default = default_config()
         save_config(default)
@@ -80,12 +74,11 @@ def load_config():
     with path.open('r', encoding='utf-8') as f:
         cfg = json.load(f)
     
-    # Merge with default config to ensure all keys are present
     default = default_config()
     default['mqtt'].update(cfg.get('mqtt', {}))
     default['radio'].update(cfg.get('radio', {}))
     if isinstance(cfg.get('meters'), list):
-        default['meters'] = cfg['meters'] # Directly use meters from file if it's a list
+        default['meters'] = cfg['meters']
     return default
 
 def save_config(cfg):
@@ -111,7 +104,6 @@ def bool_from_form(form, key):
 
 def shell(cmd, timeout=60):
     try:
-        # Use LBPLOGDIR for plugin's log files
         with open(f"{LOG_FILE}", "a", encoding="utf-8") as log_output:
             return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout, stderr=log_output, stdout=log_output)
     except Exception as e:
@@ -193,17 +185,29 @@ def save_from_form(form, cfg):
         'meter_whitelist': [x.strip() for x in form.get('radio_meter_whitelist', '').split(',') if x.strip()],
         'meter_blacklist': [x.strip() for x in form.get('radio_meter_blacklist', '').split(',') if x.strip()],
     }
-    meters = []
-    for i in range(3):
-        meters.append({
-            'name': form.get(f'meter_{i}_name', f'wohnung{i+1}').strip() or f'wohnung{i+1}',
-            'label': form.get(f'meter_{i}_label', f'Wohnung {i+1}').strip() or f'Wohnung {i+1}',
+
+    # Dynamically read meters from form data
+    new_meters = []
+    i = 0
+    while True:
+        meter_name_key = f'meter_{i}_name'
+        if meter_name_key not in form:
+            break # No more meters found
+        
+        meter = {
+            'name': form.get(meter_name_key, '').strip() or f'meter_{i+1}',
+            'label': form.get(f'meter_{i}_label', '').strip() or f'Meter {i+1}',
             'id': form.get(f'meter_{i}_id', '').strip(),
-            'driver': form.get(f'meter_{i}_driver', 'sharky').strip() or 'sharky',
+            'driver': form.get(f'meter_{i}_driver', '').strip() or 'sharky',
             'key': form.get(f'meter_{i}_key', '').strip(),
             'enabled': bool_from_form(form, f'meter_{i}_enabled')
-        })
-    cfg['meters'] = meters
+        }
+        # Only add if at least name or ID is present, or if it's explicitly enabled
+        if meter['name'] or meter['id'] or meter['enabled']:
+            new_meters.append(meter)
+        i += 1
+    
+    cfg['meters'] = new_meters
     save_config(cfg)
 
 def handle_action(form, cfg):
@@ -431,57 +435,79 @@ def render_radio(cfg):
     </div>
     '''
 
+def render_meter_card(meter_data, index):
+    meter = meter_data
+    # Use index to generate unique names for dynamically added fields
+    return f'''
+    <div class="card meter-card" data-meter-index="{index}">
+        <h2>
+            <span class="meter-label">{esc(meter.get('label', f'Meter {index+1}'))}</span>
+            <button type="button" class="ui-btn ui-mini ui-btn-inline ui-btn-icon-notext ui-icon-delete ui-btn-a remove-meter-btn" title="Remove Meter" style="float: right;">Remove</button>
+        </h2>
+        <div class="grid two compactgrid">
+            <label>Name
+                <input type="text" name="meter_{index}_name" value="{esc(meter.get('name', f'meter_{index+1}'))}">
+            </label>
+            <label>Label
+                <input type="text" name="meter_{index}_label" value="{esc(meter.get('label', f'Meter {index+1}'))}">
+            </label>
+            <label>Meter ID
+                <input type="text" name="meter_{index}_id" value="{esc(meter.get('id', ''))}" placeholder="discover first, then paste ID here">
+            </label>
+            <label>Driver
+                <input type="text" name="meter_{index}_driver" value="{esc(meter.get('driver', 'sharky'))}" placeholder="e.g., sharky">
+            </label>
+            <label>AES key (optional)
+                <input type="text" name="meter_{index}_key" value="{esc(meter.get('key', ''))}" placeholder="32 hex chars if meter is encrypted">
+            </label>
+            <label class="checkbox"><input type="checkbox" name="meter_{index}_enabled" {'checked' if meter.get('enabled', True) else ''}> Enabled</label>
+        </div>
+    </div>
+    '''
+
 def render_meters(cfg):
     cards = []
     for i, meter in enumerate(cfg.get('meters', [])):
-        cards.append(f'''
-        <div class="card">
-          <h2>{esc(meter.get('label', f'Wohnung {i+1}'))}</h2>
-          <div class="grid two compactgrid">
-            <label>Name
-              <input type="text" name="meter_{i}_name" value="{esc(meter.get('name', f'wohnung{i+1}'))}">
-            </label>
-            <label>Label
-              <input type="text" name="meter_{i}_label" value="{esc(meter.get('label', f'Wohnung {i+1}'))}">
-            </label>
-            <label>Meter ID
-              <input type="text" name="meter_{i}_id" value="{esc(meter.get('id', ''))}" placeholder="discover first, then paste ID here">
-            </label>
-            <label>Driver
-              <input type="text" name="meter_{i}_driver" value="{esc(meter.get('driver', 'sharky'))}">
-            </label>
-            <label>AES key (optional)
-              <input type="text" name="meter_{i}_key" value="{esc(meter.get('key', ''))}" placeholder="32 hex chars if meter is encrypted">
-            </label>
-            <label class="checkbox"><input type="checkbox" name="meter_{i}_enabled" {'checked' if meter.get('enabled', True) else ''}> Enabled</label>
-          </div>
-        </div>
-        ''')
-    return f'''<div class="hint">Run discovery first. Start requires IDs for every enabled meter.</div>{''.join(cards)}<div class="button-row"><button name="action" value="save">Save</button><button name="action" value="start">Save & Start</button></div>'''
+        cards.append(render_meter_card(meter, i))
 
-def parse_discovery_log(log_path: Path) -> list[dict]:
-    meters = {}
-    try:
-        if not log_path.exists():
-            return []
-        content = log_path.read_text(encoding='utf-8', errors='replace').splitlines()
-        for line in content:
-            line = line.strip()
-            if line.startswith('{') and line.endswith('}'):
-                try:
-                    data = json.loads(line)
-                    meter_id = str(data.get('id'))
-                    if meter_id and data.get('meter_type'):
-                        meters[meter_id] = {
-                            'id': meter_id,
-                            'driver': data.get('meter_type'),
-                            'key': data.get('key', '') # wmbusmeters might provide this
-                        }
-                except json.JSONDecodeError:
-                    pass
-    except Exception as e:
-        log_error(f'parse_discovery_log failed for {log_path}: {e}')
-    return list(meters.values())
+    return f'''
+    <div id="meter-container">
+        {''.join(cards)}
+    </div>
+    <div class="button-row">
+        <button type="button" id="add-meter-btn" class="ui-btn ui-btn-inline ui-corner-all ui-shadow ui-icon-plus ui-btn-icon-left">Add New Meter</button>
+        <button name="action" value="save">Save All Meters</button>
+        <button name="action" value="start" class="secondary">Save & Start Bridge</button>
+    </div>
+
+    <script>
+        let nextMeterIndex = {len(cfg.get('meters', []))};
+
+        function addMeter(meterData = {{}}) {{
+            const newMeterHtml = `{render_meter_card(meterData, nextMeterIndex)}`;
+            $('#meter-container').append(newMeterHtml);
+            // Re-enhance new jQuery Mobile elements
+            $(`#meter-container .meter-card[data-meter-index="${nextMeterIndex}"]`).enhanceWithin();
+            nextMeterIndex++;
+            // Re-bind remove event for new button
+            $('.remove-meter-btn').off('click').on('click', function() {{
+                $(this).closest('.meter-card').remove();
+            }});
+        }}
+
+        $(document).on('pagecreate', '#page-wrapper', function() {{
+            // Initial binding for remove buttons (for already rendered meters)
+            $('.remove-meter-btn').on('click', function() {{
+                $(this).closest('.meter-card').remove();
+            }});
+
+            // Bind add button
+            $('#add-meter-btn').on('click', function() {{
+                addMeter();
+            }});
+        }});
+    </script>
+    '''
 
 def render_discovery(cfg):
     bridge_log = read_tail(LOG_FILE, 80)
@@ -498,7 +524,10 @@ def render_discovery(cfg):
                 <td>{esc(meter['id'])}</td>
                 <td>{esc(meter['driver'])}</td>
                 <td>{esc(meter['key'] or '-')}</td>
-                <td><button type="button" class="add-meter-btn secondary" data-meter-id="{esc(meter['id'])}" data-meter-driver="{esc(meter['driver'])}" data-meter-key="{esc(meter['key'])}">Add to Meters</button></td>
+                <td><button type="button" class="ui-btn ui-mini ui-btn-inline ui-corner-all ui-shadow add-discovered-meter-btn"
+                            data-meter-id="{esc(meter['id'])}"
+                            data-meter-driver="{esc(meter['driver'])}"
+                            data-meter-key="{esc(meter['key'])}">Add</button></td>
             </tr>
             ''')
         discovered_meters_html = f'''
@@ -517,35 +546,29 @@ def render_discovery(cfg):
             </tbody>
         </table>
         <script>
-            document.addEventListener('DOMContentLoaded', () => {
-                document.querySelectorAll('.add-meter-btn').forEach(button => {
-                    button.addEventListener('click', (event) => {
-                        const meterId = event.target.dataset.meterId;
-                        const meterDriver = event.target.dataset.meterDriver;
-                        const meterKey = event.target.dataset.meterKey;
-
-                        let added = false;
-                        for (let i = 0; i < 3; i++) { // Assuming 3 meters in the config for now
-                            const currentIdField = document.querySelector(`input[name="meter_${i}_id"]`);
-                            if (currentIdField && currentIdField.value === '') {
-                                document.querySelector(`input[name="meter_${i}_id"]`).value = meterId;
-                                document.querySelector(`input[name="meter_${i}_driver"]`).value = meterDriver;
-                                document.querySelector(`input[name="meter_${i}_key"]`).value = meterKey;
-                                added = true;
-                                break;
-                            }
-                        }
-
-                        if (added) {
-                            // Switch to meters tab
-                            document.querySelector('input[name="tab"]').value = 'meters';
-                            document.querySelector('form').submit();
-                        } else {
-                            alert('All meter slots are in use. Please clear one or increase the number of meters in common.py.');
-                        }
-                    });
-                });
-            });
+            $(document).on('pagecreate', '#page-wrapper', function() {{
+                $('.add-discovered-meter-btn').on('click', function(event) {{
+                    const meterId = $(this).data('meter-id');
+                    const meterDriver = $(this).data('meter-driver');
+                    const meterKey = $(this).data('meter-key');
+                    
+                    // Create a dummy form object to pass to addMeter
+                    const newMeterData = {{
+                        'id': meterId,
+                        'driver': meterDriver,
+                        'key': meterKey,
+                        'name': `meter_${nextMeterIndex + 1}`, // Generate a default name
+                        'label': `Meter ${nextMeterIndex + 1}`, // Generate a default label
+                        'enabled': true
+                    }};
+                    // Call the addMeter function from the meters tab logic
+                    addMeter(newMeterData);
+                    
+                    // Switch to the meters tab after adding
+                    $('input[name="tab"]').val('meters');
+                    $('form').submit();
+                }});
+            }});
         </script>
         '''
 
@@ -580,14 +603,12 @@ def main():
     try:
         form = get_form()
         cfg = load_config()
-        # Get active tab from environment variable set by Perl wrapper
         active_tab = os.environ.get('LB_ACTIVE_TAB', 'overview')
         
         message = ''
         if form.get('action'):
             message, cfg = handle_action(form, cfg)
-            # Re-read active tab in case action changed it (e.g., "Add to Meters")
-            active_tab = form.get('tab', active_tab)
+            active_tab = form.get('tab', active_tab) # Re-read active tab in case action changed it
 
         sections = {
             'overview': render_overview(cfg),
@@ -601,9 +622,6 @@ def main():
             for key, html in sections.items()
         )
 
-        # Output only the content. Perl wrapper will handle headers, footers, etc.
-        # We also pass the message so the Perl wrapper can display it
-        # LoxBerry uses ui-corner-all ui-shadow ui-bar-a for notices
         notice_html = f'<div class="ui-corner-all ui-shadow ui-bar-a" style="display: {'block' if message else 'none'}; margin-bottom: 1em;"><p>{esc(message)}</p></div>' if message else ''
         
         print(f'''
@@ -617,7 +635,6 @@ def main():
 
     except Exception as e:
         log_error(f'Fatal UI error: {e}')
-        # In case of fatal error, print a plain text error message for debugging
         print(f'UI error: {e}')
 
 
