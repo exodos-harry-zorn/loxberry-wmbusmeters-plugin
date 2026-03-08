@@ -400,11 +400,54 @@ def render_mqtt(cfg):
     </div>
     '''
 
+def get_connected_dongles_html():
+    try:
+        # First try lsusb to find generic Realtek RTL2838/RTL2832 DVB-T dongles
+        res = subprocess.run(["lsusb"], capture_output=True, text=True, timeout=5)
+        dongles = []
+        for line in res.stdout.splitlines():
+            line_lower = line.lower()
+            if 'rtl2838' in line_lower or 'rtl2832' in line_lower or 'dvb-t' in line_lower or 'realtek' in line_lower:
+                parts = line.split(":", 2)
+                if len(parts) == 3:
+                    dongles.append(parts[2].strip())
+                else:
+                    dongles.append(line.strip())
+        
+        # Try to enrich with rtl_test to get serial numbers if available
+        if command_exists('rtl_test'):
+            res_rtl = subprocess.run(['rtl_test', '-t'], capture_output=True, text=True, timeout=5)
+            # rtl_test typically outputs to stderr
+            rtl_output = res_rtl.stderr + res_rtl.stdout
+            rtl_dongles = []
+            for line in rtl_output.splitlines():
+                if "Realtek" in line and "SN:" in line:
+                    rtl_dongles.append(line.strip())
+            if rtl_dongles:
+                # If rtl_test gave good detailed output, prefer that
+                dongles = rtl_dongles
+                
+        if not dongles:
+            return '<div style="padding: 10px; border: 1px solid #ccc; border-radius: 5px; background: #fff5d6; color: #8b6500; font-size: 14px;"><strong>No RTL-SDR compatible DVB-T Dongles detected.</strong></div>'
+        
+        html_list = ""
+        for i, d in enumerate(dongles):
+            html_list += f'<div style="margin-bottom: 4px;"><b>#{i}</b>: <span style="color: #2d6cdf;">{esc(d)}</span></div>'
+            
+        return f'<div style="padding: 10px; border: 1px solid #ccc; border-radius: 5px; background: #e9f7e7; color: #127d00; font-size: 14px; font-family: monospace;">{html_list}</div>'
+    except Exception as e:
+        return f'<div style="color: red; font-size: 13px;">Error detecting dongles: {esc(e)}</div>'
+
 def render_radio(cfg):
     radio = cfg['radio']
+    dongles_html = get_connected_dongles_html()
     return f'''
     <div class="card narrow">
-      <h2>Radio / RTL-SDR</h2>
+      <h2>Radio / RTL-SDR Setup</h2>
+      <div style="margin-bottom: 20px;">
+        <label>Connected USB SDR Dongles</label>
+        {dongles_html}
+      </div>
       <div class="grid two compactgrid">
         <label>Device
           <input type="text" name="radio_device" value="{esc(radio.get('device', 'rtlwmbus'))}">
