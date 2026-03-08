@@ -336,9 +336,9 @@ def render_overview(cfg):
           <tr><th>Topic prefix</th><td>{esc(cfg.get('mqtt', {}).get('base_topic', 'wmbus/heat'))}</td></tr>
         </table>
         <div class="button-row linkrow">
-          <a class="linkbtn" target="_blank" href="{esc(mqtt_widget_url())}">Open MQTT Widget</a>
-          <a class="linkbtn" target="_blank" href="{esc(plugin_overview_url())}">Installed Plugins</a>
-          <a class="linkbtn" target="_blank" href="{esc(admin_home_url())}">LoxBerry Home</a>
+          <a class="linkbtn" target="_blank" href="{esc(mqtt_widget_url())}"><i class="fa fa-wifi"></i> Open MQTT Widget</a>
+          <a class="linkbtn" target="_blank" href="{esc(plugin_overview_url())}"><i class="fa fa-puzzle-piece"></i> Installed Plugins</a>
+          <a class="linkbtn" target="_blank" href="{esc(admin_home_url())}"><i class="fa fa-home"></i> LoxBerry Home</a>
         </div>
       </div>
     </div>
@@ -642,9 +642,9 @@ table.compact th {{ background:#fafafa; }}
 <body>
 <div class="topbar">
   <div>
-    <a href="{esc(admin_home_url())}" target="_blank">LoxBerry Home</a>
-    <a href="{esc(plugin_overview_url())}" target="_blank">Plugins</a>
-    <a href="{esc(mqtt_widget_url())}" target="_blank">MQTT Widget</a>
+    <a href="{esc(admin_home_url())}" target="_blank"><i class="fa fa-home"></i> LoxBerry Home</a>
+    <a href="{esc(plugin_overview_url())}" target="_blank"><i class="fa fa-puzzle-piece"></i> Plugins</a>
+    <a href="{esc(mqtt_widget_url())}" target="_blank"><i class="fa fa-wifi"></i> MQTT Widget</a>
   </div>
   <div class="subtitle">wM-Bus Heat Meter Bridge • MQTT source: {esc(mqtt_live.get('source', 'unknown'))}</div>
 </div>
