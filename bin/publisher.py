@@ -48,6 +48,9 @@ class Bridge:
         self.meter_names = {str(m.get("id")): m.get("name") for m in cfg.get("meters", []) if m.get("enabled", True) and m.get("id")}
         self.publish(f"{self.base_topic}/bridge/status", "online")
         self.publish(f"{self.base_topic}/bridge/mqtt_source", mqtt_cfg.get("source", "unknown"))
+        radio_cfg = cfg.get("radio", {})
+        self.meter_whitelist = [str(x) for x in radio_cfg.get("meter_whitelist", []) if x]
+        self.meter_blacklist = [str(x) for x in radio_cfg.get("meter_blacklist", []) if x]
 
     def stop(self):
         self.publish(f"{self.base_topic}/bridge/status", "offline")
@@ -74,7 +77,14 @@ class Bridge:
                     break
 
     def process(self, msg: Dict[str, Any]):
-        meter_name = msg.get("name") or self.meter_names.get(str(msg.get("id"))) or str(msg.get("id", "unknown"))
+        meter_id = str(msg.get("id"))
+        if self.meter_whitelist and meter_id not in self.meter_whitelist:
+            logging.debug(f"Meter {meter_id} not in whitelist, skipping.")
+            return
+        if self.meter_blacklist and meter_id in self.meter_blacklist:
+            logging.debug(f"Meter {meter_id} in blacklist, skipping.")
+            return
+        meter_name = msg.get("name") or self.meter_names.get(meter_id) or meter_id
         timestamp = msg.get("timestamp", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
         self.publish(self.topic(meter_name, "raw_json"), msg)
         self.publish(self.topic(meter_name, "last_seen"), timestamp)

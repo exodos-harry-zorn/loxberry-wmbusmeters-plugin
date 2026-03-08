@@ -25,7 +25,7 @@ DEPS_LOG = TMP_DIR / 'deps_install.log'
 PID_FILE = TMP_DIR / 'bridge.pid'
 
 sys.path.insert(0, str(BIN_DIR))
-from common import resolve_mqtt_settings, mqtt_widget_url, admin_home_url, plugin_overview_url  # type: ignore
+from common import resolve_mqtt_settings, mqtt_widget_url, admin_home_url, plugin_overview_url, HEALTHCHECK_FILE  # type: ignore
 
 TABS = [
     ("overview", "Overview"),
@@ -34,6 +34,15 @@ TABS = [
     ("meters", "Meters"),
     ("discovery", "Discovery & Logs"),
 ]
+
+def read_health_check_status():
+    try:
+        if HEALTHCHECK_FILE.exists():
+            with HEALTHCHECK_FILE.open('r', encoding='utf-8') as f:
+                return json.load(f)
+    except Exception as e:
+        log_error(f'read_health_check_status failed: {e}')
+    return {}
 
 
 def log_error(msg):
@@ -186,6 +195,8 @@ def save_from_form(form, cfg):
         'log_telegrams': bool_from_form(form, 'radio_log_telegrams'),
         'ignore_duplicates': bool_from_form(form, 'radio_ignore_duplicates'),
         'discovery_seconds': int(form.get('radio_discovery_seconds', '30') or '30'),
+        'meter_whitelist': [x.strip() for x in form.get('radio_meter_whitelist', '').split(',') if x.strip()],
+        'meter_blacklist': [x.strip() for x in form.get('radio_meter_blacklist', '').split(',') if x.strip()],
     }
     meters = []
     for i in range(3):
@@ -247,6 +258,17 @@ def handle_action(form, cfg):
     elif action == 'clear_discovery_log':
         DISCOVERY_LOG.write_text('', encoding='utf-8')
         msg = 'Discovery log cleared.'
+    elif action == 'run_healthcheck':
+        healthcheck_script = BIN_DIR / 'healthcheck.py'
+        if healthcheck_script.exists():
+            result = shell([sys.executable, str(healthcheck_script)]) # Run in foreground for immediate feedback
+            msg = f'Health check: rc={result.returncode}'
+            if result.stdout:
+                msg += ' | ' + result.stdout.strip().replace('\n', ' | ')
+            if result.stderr:
+                msg += ' | ' + result.stderr.strip().replace('\n', ' | ')
+        else:
+            msg = 'healthcheck.py not found.'
     return msg, cfg
 
 
@@ -272,6 +294,24 @@ def render_overview(cfg):
         rows.append(f'<tr><td>{esc(k)}</td><td class="status">{"OK" if ok else "missing"}</td></tr>')
     meter_count = sum(1 for m in cfg.get('meters', []) if m.get('enabled'))
     configured_count = sum(1 for m in cfg.get('meters', []) if m.get('enabled') and m.get('id'))
+
+    health_status = read_health_check_status()
+    health_check_html = ''
+    if health_status:
+        health_check_html = f'''
+        <div class="card">
+          <h2>Health Check</h2>
+          <p><strong>Overall Status:</strong> {status_badge(health_status.get('overall_status', 'unknown'))}</p>
+          <table class="compact">
+            <tr><th>wmbusmeters</th><td>{esc(health_status.get('wmbusmeters_status_text', 'N/A'))}</td></tr>
+            <tr><th>RTL-SDR</th><td>{esc(health_status.get('rtl_sdr_status_text', 'N/A'))}</td></tr>
+          </table>
+          <div class="button-row">
+            <button name="action" value="run_healthcheck" class="secondary">Re-run Health Check</button>
+          </div>
+        </div>
+        '''
+
     return f'''
     <div class="grid two">
       <div class="card">
@@ -306,6 +346,7 @@ def render_overview(cfg):
       <h2>Dependency status</h2>
       <table class="compact"><tr><th>Component</th><th>Status</th></tr>{''.join(rows)}</table>
     </div>
+    {health_check_html}
     '''
 
 
@@ -367,6 +408,13 @@ def render_radio(cfg):
         <label class="checkbox"><input type="checkbox" name="radio_log_telegrams" {'checked' if radio.get('log_telegrams', False) else ''}> Log telegrams</label>
         <label class="checkbox"><input type="checkbox" name="radio_ignore_duplicates" {'checked' if radio.get('ignore_duplicates', True) else ''}> Ignore duplicates</label>
       </div>
+      <h3>Meter Filtering (IDs separated by commas)</h3>
+      <label>Whitelist (only process these meters)
+        <input type="text" name="radio_meter_whitelist" value="{esc(','.join(radio.get('meter_whitelist', [])))}">
+      </label>
+      <label>Blacklist (do not process these meters)
+        <input type="text" name="radio_meter_blacklist" value="{esc(','.join(radio.get('meter_blacklist', [])))}">
+      </label>
       <div class="button-row">
         <button name="action" value="save">Save</button>
         <button name="action" value="discover" class="secondary">Run discovery</button>
@@ -404,10 +452,97 @@ def render_meters(cfg):
     return f'''<div class="hint">Run discovery first. Start requires IDs for every enabled meter.</div>{''.join(cards)}<div class="button-row"><button name="action" value="save">Save</button><button name="action" value="start">Save & Start</button></div>'''
 
 
+def parse_discovery_log(log_path: Path) -> list[dict]:
+    meters = {}
+    try:
+        if not log_path.exists():
+            return []
+        content = log_path.read_text(encoding='utf-8', errors='replace').splitlines()
+        for line in content:
+            line = line.strip()
+            if line.startswith('{') and line.endswith('}'):
+                try:
+                    data = json.loads(line)
+                    meter_id = str(data.get('id'))
+                    if meter_id and data.get('meter_type'):
+                        meters[meter_id] = {
+                            'id': meter_id,
+                            'driver': data.get('meter_type'),
+                            'key': data.get('key', '') # wmbusmeters might provide this
+                        }
+                except json.JSONDecodeError:
+                    pass
+    except Exception as e:
+        log_error(f'parse_discovery_log failed for {log_path}: {e}')
+    return list(meters.values())
+
+
 def render_discovery(cfg):
     bridge_log = read_tail(LOG_FILE, 80)
     discovery_log = read_tail(DISCOVERY_LOG, 120)
     deps_log = read_tail(DEPS_LOG, 80)
+
+    discovered_meters = parse_discovery_log(DISCOVERY_LOG)
+    discovered_meters_html = ''
+    if discovered_meters:
+        rows = []
+        for i, meter in enumerate(discovered_meters):
+            rows.append(f'''
+            <tr>
+                <td>{esc(meter['id'])}</td>
+                <td>{esc(meter['driver'])}</td>
+                <td>{esc(meter['key'] or '-')}</td>
+                <td><button type="button" class="add-meter-btn secondary" data-meter-id="{esc(meter['id'])}" data-meter-driver="{esc(meter['driver'])}" data-meter-key="{esc(meter['key'])}">Add to Meters</button></td>
+            </tr>
+            ''')
+        discovered_meters_html = f'''
+        <h3>Discovered Meters</h3>
+        <table class="compact">
+            <thead>
+                <tr>
+                    <th>ID</th>
+                    <th>Driver</th>
+                    <th>Key</th>
+                    <th>Action</th>
+                </tr>
+            </thead>
+            <tbody>
+                {''.join(rows)}
+            </tbody>
+        </table>
+        <script>
+            document.addEventListener('DOMContentLoaded', () => {
+                document.querySelectorAll('.add-meter-btn').forEach(button => {
+                    button.addEventListener('click', (event) => {
+                        const meterId = event.target.dataset.meterId;
+                        const meterDriver = event.target.dataset.meterDriver;
+                        const meterKey = event.target.dataset.meterKey;
+
+                        let added = false;
+                        for (let i = 0; i < 3; i++) { // Assuming 3 meters in the config for now
+                            const currentIdField = document.querySelector(`input[name="meter_${i}_id"]`);
+                            if (currentIdField && currentIdField.value === '') {
+                                document.querySelector(`input[name="meter_${i}_id"]`).value = meterId;
+                                document.querySelector(`input[name="meter_${i}_driver"]`).value = meterDriver;
+                                document.querySelector(`input[name="meter_${i}_key"]`).value = meterKey;
+                                added = true;
+                                break;
+                            }
+                        }
+
+                        if (added) {
+                            // Switch to meters tab
+                            document.querySelector('input[name="tab"]').value = 'meters';
+                            document.querySelector('form').submit();
+                        } else {
+                            alert('All meter slots are in use. Please clear one or increase the number of meters in common.py.');
+                        }
+                    });
+                });
+            });
+        </script>
+        '''
+
     return f'''
     <div class="grid two">
       <div class="card">
@@ -418,6 +553,7 @@ def render_discovery(cfg):
           <button name="action" value="clear_discovery_log" class="secondary">Clear discovery log</button>
         </div>
         <pre>{esc(discovery_log or 'No discovery log yet.')}</pre>
+        {discovered_meters_html}
       </div>
       <div class="card">
         <h2>Bridge log</h2>

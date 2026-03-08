@@ -19,6 +19,8 @@ PID_FILE = TMP_DIR / "bridge.pid"
 DISCOVERY_LOG = TMP_DIR / "discovery.log"
 DEPS_LOG = TMP_DIR / "deps_install.log"
 DEPS_STATUS_FILE = TMP_DIR / "deps_status.txt"
+HEALTHCHECK_FILE = TMP_DIR / "healthcheck_status.json"
+HEALTHCHECK_FILE = TMP_DIR / "healthcheck_status.json"
 MQTT_CANDIDATE_FILES = [
     Path("/opt/loxberry/config/system/mqtt.json"),
     Path("/opt/loxberry/config/system/mqttgateway.json"),
@@ -49,6 +51,8 @@ def _default_config() -> Dict[str, Any]:
             "log_telegrams": False,
             "ignore_duplicates": True,
             "discovery_seconds": 30,
+            "meter_whitelist": [],
+            "meter_blacklist": [],
         },
         "paths": {"workdir": str(TMP_DIR), "logfile": str(LOG_FILE)},
         "meters": [
