@@ -87,7 +87,7 @@ if ($ENV{'REQUEST_METHOD'} && $ENV{'REQUEST_METHOD'} eq 'POST') {
     }
 } else {
     # For GET requests, simply execute Python script
-    $content_output = LoxBerry::System::readpipe("/usr/bin/env python3 $content_script_path 2>&1");
+    $content_output = `/usr/bin/env python3 $content_script_path 2>&1`;
     $python_exit_code = $? >> 8;
 }
 
