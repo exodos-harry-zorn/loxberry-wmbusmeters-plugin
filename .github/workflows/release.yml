@@ -176,6 +176,7 @@ jobs:
           OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
           EXODOS_API_KEY: op://AI Vault/exodos.ai Production API Key/Credential
           EXODOS_HOST: op://AI Vault/exodos.ai Production API Key/hostname
+          EXODOS_INVENTORYROOT_ID: op://AI Vault/exodos.ai Production API Key/inventoryroot_id
 
       - name: Generate SBOM
         uses: anchore/sbom-action@v0
@@ -186,11 +187,11 @@ jobs:
 
       - name: Upload SBOM to exodos.ai
         run: |
-          curl -s -X POST "https://$EXODOS_HOST/api/v1/sbom" \
-            -H "Authorization: Bearer $EXODOS_API_KEY" \
-            -F "file=@sbom.spdx.json" \
-            -F "project=loxberry-wmbusmeters-plugin" \
-            -F "version=${{ inputs.new_version }}"
+          curl -s -X POST "https://$EXODOS_HOST/api/v1/boms/inventory/bom/upload" \
+            -H "X-API-Key: $EXODOS_API_KEY" \
+            -H "accept: application/json" \
+            -F "params={\"inventoryroot_id\": \"$EXODOS_INVENTORYROOT_ID\"}" \
+            -F "file=@sbom.spdx.json;type=application/json"
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
