@@ -195,7 +195,7 @@ jobs:
           curl -f -v -X POST "https://api.exodos.io/api/v1/boms/inventory/bom/upload" \
             -H "X-API-Key: $EXODOS_API_KEY" \
             -H "accept: application/json" \
-            -F "params={\"inventoryroot_id\": \"$EXODOS_INVENTORYROOT_ID\"}" \
+            -F "params={\"inventoryroot_id\": \"$EXODOS_INVENTORYROOT_ID\", \"inventorydisplayname\": \"loxberry-wmbusmeters-plugin ${{ inputs.new_version }}\"}" \
             -F "file=@sbom.spdx.json;type=application/json"
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
