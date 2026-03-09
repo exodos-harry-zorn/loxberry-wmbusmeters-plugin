@@ -207,11 +207,27 @@ jobs:
           if "components" not in bom:
               bom["components"] = []
               
+          # Clean up unwanted GitHub Actions and files
+          filtered_components = []
+          unwanted_names = ["1password/", "actions/", "anchore/", "softprops/"]
+          for c in bom["components"]:
+              name = c.get("name", "")
+              # Exclude components recognized as github actions or local files
+              if any(name.startswith(uw) for uw in unwanted_names):
+                  continue
+              if c.get("type") == "file" or c.get("type") == "github-action":
+                  continue
+              if "github/workflows" in name:
+                  continue
+              filtered_components.append(c)
+          
+          bom["components"] = filtered_components
+              
           extra = [
               {"name": "python3", "type": "library", "purl_base": "pkg:deb/debian/python3"},
-              {"name": "mosquitto-clients", "type": "application", "purl_base": "pkg:deb/debian/mosquitto-clients"},
-              {"name": "rtl-sdr", "type": "application", "purl_base": "pkg:deb/debian/rtl-sdr"},
-              {"name": "wmbusmeters", "type": "application", "purl_base": "pkg:github/wmbusmeters/wmbusmeters"}
+              {"name": "mosquitto-clients", "type": "library", "purl_base": "pkg:deb/debian/mosquitto-clients"},
+              {"name": "rtl-sdr", "type": "library", "purl_base": "pkg:deb/debian/rtl-sdr"},
+              {"name": "wmbusmeters", "type": "library", "purl_base": "pkg:github/wmbusmeters/wmbusmeters"}
           ]
           
           dep_refs = []
