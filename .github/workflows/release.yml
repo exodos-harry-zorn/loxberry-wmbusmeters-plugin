@@ -178,12 +178,36 @@ jobs:
           EXODOS_HOST: op://AI Vault/exodos.ai Production API Key/hostname
           EXODOS_INVENTORYROOT_ID: op://AI Vault/exodos.ai Production API Key/inventoryroot_id
 
+      - name: Build environment for complete SBOM
+        run: |
+          cat << 'DOCKEREOF' > Dockerfile.sbom
+          FROM debian:bookworm-slim
+          ENV DEBIAN_FRONTEND=noninteractive
+          # Install dependencies exactly as in install_deps.sh
+          RUN apt-get update && apt-get install -y --no-install-recommends \
+              git build-essential pkg-config autoconf automake libtool make \
+              rtl-sdr librtlsdr-dev libusb-1.0-0-dev libxml2-dev \
+              python3 python3-pip python3-paho-mqtt \
+              mosquitto mosquitto-clients ca-certificates sudo
+          # Clone and install wmbusmeters
+          RUN git clone --depth 1 https://github.com/wmbusmeters/wmbusmeters.git /tmp/wmbusmeters && \
+              cd /tmp/wmbusmeters && ./configure && make && make install
+          # Copy plugin files
+          COPY . /plugin
+          DOCKEREOF
+          docker build -t loxberry-wmbusmeters-plugin-env:${{ inputs.new_version }} -f Dockerfile.sbom .
+
       - name: Generate SBOM
         uses: anchore/sbom-action@v0
         with:
-          path: ./
-          format: spdx-json
-          output-file: loxberry-wmbusmeters-plugin-${{ inputs.new_version }}.spdx.json
+          image: loxberry-wmbusmeters-plugin-env:${{ inputs.new_version }}
+          format: cyclonedx-json
+          output-file: loxberry-wmbusmeters-plugin-${{ inputs.new_version }}.cyclonedx.json
+
+      - name: Inject Version into CycloneDX SBOM
+        run: |
+          jq '.metadata.component.version = "${{ inputs.new_version }}" | .metadata.component.name = "loxberry-wmbusmeters-plugin"' loxberry-wmbusmeters-plugin-${{ inputs.new_version }}.cyclonedx.json > tmp.json && mv tmp.json loxberry-wmbusmeters-plugin-${{ inputs.new_version }}.cyclonedx.json
+
 
       - name: Upload SBOM to exodos.ai
         run: |
@@ -196,7 +220,7 @@ jobs:
             -H "X-API-Key: $EXODOS_API_KEY" \
             -H "accept: application/json" \
             -F "params={\"inventoryroot_id\": \"$EXODOS_INVENTORYROOT_ID\", \"inventorydisplayname\": \"loxberry-wmbusmeters-plugin\", \"inventoryversion_string\": \"${{ inputs.new_version }}\"}" \
-            -F "file=@loxberry-wmbusmeters-plugin-${{ inputs.new_version }}.spdx.json;type=application/json"
+            -F "file=@loxberry-wmbusmeters-plugin-${{ inputs.new_version }}.cyclonedx.json;type=application/json"
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
@@ -214,6 +238,6 @@ jobs:
             - SHA256: ${{ steps.zip.outputs.sha256 }}
           files: |
             ${{ steps.zip.outputs.zip_file }}
-            loxberry-wmbusmeters-plugin-${{ inputs.new_version }}.spdx.json
+            loxberry-wmbusmeters-plugin-${{ inputs.new_version }}.cyclonedx.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
