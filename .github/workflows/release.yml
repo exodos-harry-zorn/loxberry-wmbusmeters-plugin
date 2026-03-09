@@ -183,7 +183,7 @@ jobs:
         with:
           path: ./
           format: spdx-json
-          output-file: sbom.spdx.json
+          output-file: loxberry-wmbusmeters-plugin-${{ inputs.new_version }}.spdx.json
 
       - name: Upload SBOM to exodos.ai
         run: |
@@ -195,8 +195,8 @@ jobs:
           curl -f -v -X POST "https://api.exodos.io/api/v1/boms/inventory/bom/upload" \
             -H "X-API-Key: $EXODOS_API_KEY" \
             -H "accept: application/json" \
-            -F "params={\"inventoryroot_id\": \"$EXODOS_INVENTORYROOT_ID\", \"inventorydisplayname\": \"loxberry-wmbusmeters-plugin ${{ inputs.new_version }}\"}" \
-            -F "file=@sbom.spdx.json;type=application/json"
+            -F "params={\"inventoryroot_id\": \"$EXODOS_INVENTORYROOT_ID\", \"inventorydisplayname\": \"loxberry-wmbusmeters-plugin\", \"inventoryversion_string\": \"${{ inputs.new_version }}\"}" \
+            -F "file=@loxberry-wmbusmeters-plugin-${{ inputs.new_version }}.spdx.json;type=application/json"
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
@@ -214,6 +214,6 @@ jobs:
             - SHA256: ${{ steps.zip.outputs.sha256 }}
           files: |
             ${{ steps.zip.outputs.zip_file }}
-            sbom.spdx.json
+            loxberry-wmbusmeters-plugin-${{ inputs.new_version }}.spdx.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
