@@ -178,35 +178,44 @@ jobs:
           EXODOS_HOST: op://AI Vault/exodos.ai Production API Key/hostname
           EXODOS_INVENTORYROOT_ID: op://AI Vault/exodos.ai Production API Key/inventoryroot_id
 
-      - name: Build environment for complete SBOM
-        run: |
-          cat << 'DOCKEREOF' > Dockerfile.sbom
-          FROM debian:bookworm-slim
-          ENV DEBIAN_FRONTEND=noninteractive
-          # Install dependencies exactly as in install_deps.sh
-          RUN apt-get update && apt-get install -y --no-install-recommends \
-              git build-essential pkg-config autoconf automake libtool make \
-              rtl-sdr librtlsdr-dev libusb-1.0-0-dev libxml2-dev \
-              python3 python3-pip python3-paho-mqtt \
-              mosquitto mosquitto-clients ca-certificates sudo
-          # Clone and install wmbusmeters
-          RUN git clone --depth 1 https://github.com/wmbusmeters/wmbusmeters.git /tmp/wmbusmeters && \
-              cd /tmp/wmbusmeters && ./configure && make && make install
-          # Copy plugin files
-          COPY . /plugin
-          DOCKEREOF
-          docker build -t loxberry-wmbusmeters-plugin-env:${{ inputs.new_version }} -f Dockerfile.sbom .
-
       - name: Generate SBOM
         uses: anchore/sbom-action@v0
         with:
-          image: loxberry-wmbusmeters-plugin-env:${{ inputs.new_version }}
+          path: ./
           format: cyclonedx-json
           output-file: loxberry-wmbusmeters-plugin-${{ inputs.new_version }}.cyclonedx.json
 
-      - name: Inject Version into CycloneDX SBOM
+      - name: Inject Version and Plugin Dependencies into SBOM
         run: |
-          jq '.metadata.component.version = "${{ inputs.new_version }}" | .metadata.component.name = "loxberry-wmbusmeters-plugin"' loxberry-wmbusmeters-plugin-${{ inputs.new_version }}.cyclonedx.json > tmp.json && mv tmp.json loxberry-wmbusmeters-plugin-${{ inputs.new_version }}.cyclonedx.json
+          python3 -c '
+          import json
+          file = "loxberry-wmbusmeters-plugin-${{ inputs.new_version }}.cyclonedx.json"
+          with open(file, "r") as f:
+              bom = json.load(f)
+          
+          if "metadata" in bom and "component" in bom["metadata"]:
+              bom["metadata"]["component"]["version"] = "${{ inputs.new_version }}"
+              bom["metadata"]["component"]["name"] = "loxberry-wmbusmeters-plugin"
+          
+          if "components" not in bom:
+              bom["components"] = []
+              
+          extra = [
+              {"name": "python3", "type": "application"},
+              {"name": "mosquitto-clients", "type": "application"},
+              {"name": "rtl-sdr", "type": "application"},
+              {"name": "wmbusmeters", "type": "application"}
+          ]
+          
+          for c in extra:
+              c["version"] = "latest"
+              c["bom-ref"] = f"pkg:generic/{c['name']}@latest"
+              c["purl"] = c["bom-ref"]
+              bom["components"].append(c)
+              
+          with open(file, "w") as f:
+              json.dump(bom, f, indent=2)
+          '
 
 
       - name: Upload SBOM to exodos.ai
