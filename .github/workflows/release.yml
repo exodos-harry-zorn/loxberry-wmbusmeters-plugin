@@ -195,25 +195,49 @@ jobs:
           with open(file, "r") as f:
               bom = json.load(f)
           
+          main_ref = "pkg:generic/loxberry-wmbusmeters-plugin@" + sys.argv[1]
+          
           if "metadata" in bom and "component" in bom["metadata"]:
               bom["metadata"]["component"]["version"] = sys.argv[1]
               bom["metadata"]["component"]["name"] = "loxberry-wmbusmeters-plugin"
+              bom["metadata"]["component"]["type"] = "application"
+              bom["metadata"]["component"]["bom-ref"] = main_ref
+              bom["metadata"]["component"]["purl"] = main_ref
           
           if "components" not in bom:
               bom["components"] = []
               
           extra = [
-              {"name": "python3", "type": "application"},
-              {"name": "mosquitto-clients", "type": "application"},
-              {"name": "rtl-sdr", "type": "application"},
-              {"name": "wmbusmeters", "type": "application"}
+              {"name": "python3", "type": "library", "purl_base": "pkg:deb/debian/python3"},
+              {"name": "mosquitto-clients", "type": "application", "purl_base": "pkg:deb/debian/mosquitto-clients"},
+              {"name": "rtl-sdr", "type": "application", "purl_base": "pkg:deb/debian/rtl-sdr"},
+              {"name": "wmbusmeters", "type": "application", "purl_base": "pkg:github/wmbusmeters/wmbusmeters"}
           ]
           
+          dep_refs = []
           for c in extra:
               c["version"] = "latest"
-              c["bom-ref"] = f"pkg:generic/{c['name']}@latest"
+              c["bom-ref"] = f"{c['purl_base']}@latest"
               c["purl"] = c["bom-ref"]
+              del c["purl_base"]
               bom["components"].append(c)
+              dep_refs.append(c["bom-ref"])
+              
+          if "dependencies" not in bom:
+              bom["dependencies"] = []
+              
+          # Check if main component already has a dependency entry
+          main_dep = next((d for d in bom["dependencies"] if d["ref"] == main_ref), None)
+          if main_dep:
+              if "dependsOn" not in main_dep:
+                  main_dep["dependsOn"] = []
+              main_dep["dependsOn"].extend(dep_refs)
+              main_dep["dependsOn"] = list(set(main_dep["dependsOn"])) # deduplicate
+          else:
+              bom["dependencies"].append({
+                  "ref": main_ref,
+                  "dependsOn": dep_refs
+              })
               
           with open(file, "w") as f:
               json.dump(bom, f, indent=2)
