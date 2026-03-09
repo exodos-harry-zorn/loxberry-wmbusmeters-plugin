@@ -187,15 +187,12 @@ jobs:
 
       - name: Upload SBOM to exodos.ai
         run: |
-          if [ -z "$EXODOS_HOST" ]; then echo "EXODOS_HOST is empty! Check 1Password field name."; exit 1; fi
           if [ -z "$EXODOS_INVENTORYROOT_ID" ]; then echo "EXODOS_INVENTORYROOT_ID is empty! Check 1Password field name."; exit 1; fi
+          if [ -z "$EXODOS_API_KEY" ]; then echo "EXODOS_API_KEY is empty! Check 1Password field name."; exit 1; fi
           
-          # Strip protocol and trailing slash in case it was stored as https://... in 1Password
-          CLEAN_HOST=$(echo "$EXODOS_HOST" | sed -e 's|^[^/]*//||' -e 's|/$||')
+          echo "Uploading SBOM to https://api.exodos.io/api/v1/boms/inventory/bom/upload"
           
-          echo "Uploading to https://$CLEAN_HOST/api/v1/boms/inventory/bom/upload"
-          
-          curl -v -X POST "https://$CLEAN_HOST/api/v1/boms/inventory/bom/upload" \
+          curl -f -v -X POST "https://api.exodos.io/api/v1/boms/inventory/bom/upload" \
             -H "X-API-Key: $EXODOS_API_KEY" \
             -H "accept: application/json" \
             -F "params={\"inventoryroot_id\": \"$EXODOS_INVENTORYROOT_ID\"}" \
