@@ -167,6 +167,30 @@ jobs:
             git push origin HEAD:main
           fi
 
+
+      - name: Load secrets from 1Password
+        uses: 1password/load-secrets-action@v2
+        with:
+          export-env: true
+        env:
+          OP_SERVICE_ACCOUNT_TOKEN: ${{ secrets.OP_SERVICE_ACCOUNT_TOKEN }}
+          EXODOS_API_KEY: op://AI Vault/exodos.ai Production API Key/Credential
+          EXODOS_HOST: op://AI Vault/exodos.ai Production API Key/hostname
+
+      - name: Generate SBOM
+        uses: anchore/sbom-action@v0
+        with:
+          path: ./
+          format: spdx-json
+          output-file: sbom.spdx.json
+
+      - name: Upload SBOM to exodos.ai
+        run: |
+          curl -s -X POST "https://$EXODOS_HOST/api/v1/sbom" \
+            -H "Authorization: Bearer $EXODOS_API_KEY" \
+            -F "file=@sbom.spdx.json" \
+            -F "project=loxberry-wmbusmeters-plugin" \
+            -F "version=${{ inputs.new_version }}"
       - name: Create GitHub release
         uses: softprops/action-gh-release@v2
         with:
@@ -184,5 +208,6 @@ jobs:
             - SHA256: ${{ steps.zip.outputs.sha256 }}
           files: |
             ${{ steps.zip.outputs.zip_file }}
+            sbom.spdx.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
