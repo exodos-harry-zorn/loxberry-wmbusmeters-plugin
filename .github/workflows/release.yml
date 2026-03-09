@@ -187,14 +187,16 @@ jobs:
 
       - name: Inject Version and Plugin Dependencies into SBOM
         run: |
-          python3 -c '
+          cat << 'PYEOF' > patch_bom.py
           import json
-          file = "loxberry-wmbusmeters-plugin-${{ inputs.new_version }}.cyclonedx.json"
+          import sys
+          
+          file = f"loxberry-wmbusmeters-plugin-{sys.argv[1]}.cyclonedx.json"
           with open(file, "r") as f:
               bom = json.load(f)
           
           if "metadata" in bom and "component" in bom["metadata"]:
-              bom["metadata"]["component"]["version"] = "${{ inputs.new_version }}"
+              bom["metadata"]["component"]["version"] = sys.argv[1]
               bom["metadata"]["component"]["name"] = "loxberry-wmbusmeters-plugin"
           
           if "components" not in bom:
@@ -215,7 +217,8 @@ jobs:
               
           with open(file, "w") as f:
               json.dump(bom, f, indent=2)
-          '
+          PYEOF
+          python3 patch_bom.py "${{ inputs.new_version }}"
 
 
       - name: Upload SBOM to exodos.ai
