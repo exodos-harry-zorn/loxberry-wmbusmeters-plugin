@@ -20,7 +20,7 @@ DISCOVERY_LOG = TMP_DIR / "discovery.log"
 DEPS_LOG = TMP_DIR / "deps_install.log"
 DEPS_STATUS_FILE = TMP_DIR / "deps_status.txt"
 HEALTHCHECK_FILE = TMP_DIR / "healthcheck_status.json"
-HEALTHCHECK_FILE = TMP_DIR / "healthcheck_status.json"
+METER_STATUS_FILE = TMP_DIR / "meter_status.json"
 MQTT_CANDIDATE_FILES = [
     Path("/opt/loxberry/config/system/mqtt.json"),
     Path("/opt/loxberry/config/system/mqttgateway.json"),

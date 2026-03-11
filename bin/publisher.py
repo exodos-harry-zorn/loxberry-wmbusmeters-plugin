@@ -5,12 +5,17 @@ import logging
 import signal
 import sys
 import time
+from datetime import datetime, timezone
+from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 import paho.mqtt.client as mqtt
-from common import load_config, resolve_mqtt_settings
+from common import METER_STATUS_FILE, load_config, resolve_mqtt_settings
 
 RUNNING = True
+STATUS_STALE_SECONDS = 15 * 60
+STATUS_OFFLINE_SECONDS = 60 * 60
+STATUS_PUBLISH_INTERVAL_SECONDS = 30
 
 FIELD_CANDIDATES = {
     "energy_kwh": ["total_energy_consumption_kwh", "total_kwh", "energy_kwh", "total_energy_kwh"],
@@ -46,16 +51,36 @@ class Bridge:
         self.client.connect(mqtt_cfg.get("host", "127.0.0.1"), int(mqtt_cfg.get("port", 1883)), keepalive=60)
         self.client.loop_start()
         self.meter_names = {str(m.get("id")): m.get("name") for m in cfg.get("meters", []) if m.get("enabled", True) and m.get("id")}
+        self.meter_configs = {str(m.get("id")): m for m in cfg.get("meters", []) if m.get("enabled", True) and m.get("id")}
+        self.meter_whitelist = [str(x) for x in cfg.get("radio", {}).get("meter_whitelist", []) if x]
+        self.meter_blacklist = [str(x) for x in cfg.get("radio", {}).get("meter_blacklist", []) if x]
+        self.status_cache: Dict[str, Dict[str, Any]] = self._initial_status_cache()
+        self.last_status_publish = 0.0
+
         self.publish(f"{self.base_topic}/bridge/status", "online")
         self.publish(f"{self.base_topic}/bridge/mqtt_source", mqtt_cfg.get("source", "unknown"))
-        radio_cfg = cfg.get("radio", {})
-        self.meter_whitelist = [str(x) for x in radio_cfg.get("meter_whitelist", []) if x]
-        self.meter_blacklist = [str(x) for x in radio_cfg.get("meter_blacklist", []) if x]
+        self.publish_statuses(force=True)
+
+    def _initial_status_cache(self) -> Dict[str, Dict[str, Any]]:
+        cache: Dict[str, Dict[str, Any]] = {}
+        now = time.time()
+        for meter_id in self.meter_configs.keys():
+            cache[meter_id] = {
+                "status": "offline",
+                "last_seen": None,
+                "last_seen_epoch": None,
+                "minutes_since_seen": None,
+                "updated_at_epoch": int(now),
+            }
+        return cache
 
     def stop(self):
+        for meter_id in list(self.status_cache.keys()):
+            self.set_meter_status(meter_id, "offline", publish=True)
         self.publish(f"{self.base_topic}/bridge/status", "offline")
         self.client.loop_stop()
         self.client.disconnect()
+        self.write_status_file()
 
     def publish(self, topic: str, payload: Any, retain: Optional[bool] = None):
         if isinstance(payload, (dict, list)):
@@ -76,24 +101,112 @@ class Bridge:
                     yield out_field, msg[candidate]
                     break
 
+    def parse_timestamp(self, raw: Any) -> Tuple[str, int]:
+        if raw:
+            text = str(raw).strip()
+            try:
+                dt = datetime.fromisoformat(text.replace("Z", "+00:00"))
+                epoch = int(dt.timestamp())
+                return dt.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), epoch
+            except Exception:
+                pass
+        now = int(time.time())
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(now)), now
+
+    def derive_status(self, seconds_since_seen: Optional[int]) -> str:
+        if seconds_since_seen is None:
+            return "offline"
+        if seconds_since_seen >= STATUS_OFFLINE_SECONDS:
+            return "offline"
+        if seconds_since_seen >= STATUS_STALE_SECONDS:
+            return "stale"
+        return "online"
+
+    def write_status_file(self):
+        try:
+            Path(METER_STATUS_FILE).parent.mkdir(parents=True, exist_ok=True)
+            with Path(METER_STATUS_FILE).open("w", encoding="utf-8") as f:
+                json.dump(self.status_cache, f, indent=2, ensure_ascii=False)
+                f.write("\n")
+        except Exception:
+            logging.exception("Failed to write meter status file")
+
+    def set_meter_status(self, meter_id: str, status: str, publish: bool = False):
+        meter_name = self.meter_names.get(meter_id) or meter_id
+        entry = self.status_cache.setdefault(meter_id, {
+            "status": "offline",
+            "last_seen": None,
+            "last_seen_epoch": None,
+            "minutes_since_seen": None,
+            "updated_at_epoch": int(time.time()),
+        })
+        changed = entry.get("status") != status
+        entry["status"] = status
+        entry["updated_at_epoch"] = int(time.time())
+        if publish or changed:
+            self.publish(self.topic(meter_name, "availability"), status)
+            self.publish(self.topic(meter_name, "status_json"), entry)
+
+    def publish_statuses(self, force: bool = False):
+        now = int(time.time())
+        any_changed = False
+        for meter_id in self.meter_configs.keys():
+            entry = self.status_cache.setdefault(meter_id, {
+                "status": "offline",
+                "last_seen": None,
+                "last_seen_epoch": None,
+                "minutes_since_seen": None,
+                "updated_at_epoch": now,
+            })
+            last_seen_epoch = entry.get("last_seen_epoch")
+            seconds_since_seen = None if last_seen_epoch is None else max(0, now - int(last_seen_epoch))
+            minutes_since_seen = None if seconds_since_seen is None else seconds_since_seen // 60
+            new_status = self.derive_status(seconds_since_seen)
+            if entry.get("minutes_since_seen") != minutes_since_seen:
+                entry["minutes_since_seen"] = minutes_since_seen
+                any_changed = True
+            meter_name = self.meter_names.get(meter_id) or meter_id
+            self.publish(self.topic(meter_name, "minutes_since_seen"), "" if minutes_since_seen is None else minutes_since_seen)
+            self.publish(self.topic(meter_name, "last_seen_epoch"), "" if last_seen_epoch is None else last_seen_epoch)
+            if force or entry.get("status") != new_status:
+                self.set_meter_status(meter_id, new_status, publish=True)
+                any_changed = True
+        if force or any_changed:
+            self.write_status_file()
+        self.last_status_publish = time.time()
+
     def process(self, msg: Dict[str, Any]):
         meter_id = str(msg.get("id"))
         if self.meter_whitelist and meter_id not in self.meter_whitelist:
-            logging.debug(f"Meter {meter_id} not in whitelist, skipping.")
+            logging.debug("Meter %s not in whitelist, skipping.", meter_id)
             return
         if self.meter_blacklist and meter_id in self.meter_blacklist:
-            logging.debug(f"Meter {meter_id} in blacklist, skipping.")
+            logging.debug("Meter %s in blacklist, skipping.", meter_id)
             return
         meter_name = msg.get("name") or self.meter_names.get(meter_id) or meter_id
-        timestamp = msg.get("timestamp", time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()))
+        timestamp, timestamp_epoch = self.parse_timestamp(msg.get("timestamp"))
         self.publish(self.topic(meter_name, "raw_json"), msg)
         self.publish(self.topic(meter_name, "last_seen"), timestamp)
-        self.publish(self.topic(meter_name, "availability"), "online")
+        self.publish(self.topic(meter_name, "last_seen_epoch"), timestamp_epoch)
+        self.publish(self.topic(meter_name, "minutes_since_seen"), 0)
         self.publish(self.topic(meter_name, "id"), msg.get("id", ""))
         self.publish(self.topic(meter_name, "meter_type"), msg.get("meter", ""))
         self.publish(self.topic(meter_name, "media"), msg.get("media", ""))
         for key, value in self.normalized_fields(msg):
             self.publish(self.topic(meter_name, key), value)
+
+        entry = self.status_cache.setdefault(meter_id, {
+            "status": "offline",
+            "last_seen": None,
+            "last_seen_epoch": None,
+            "minutes_since_seen": None,
+            "updated_at_epoch": int(time.time()),
+        })
+        entry["last_seen"] = timestamp
+        entry["last_seen_epoch"] = timestamp_epoch
+        entry["minutes_since_seen"] = 0
+        self.set_meter_status(meter_id, "online", publish=True)
+        self.write_status_file()
 
 
 def parse_line(line: str):
@@ -117,11 +230,15 @@ def main() -> int:
         while RUNNING:
             line = sys.stdin.readline()
             if line == "":
+                if time.time() - bridge.last_status_publish >= STATUS_PUBLISH_INTERVAL_SECONDS:
+                    bridge.publish_statuses()
                 time.sleep(0.1)
                 continue
             msg = parse_line(line)
             if msg:
                 bridge.process(msg)
+                if time.time() - bridge.last_status_publish >= STATUS_PUBLISH_INTERVAL_SECONDS:
+                    bridge.publish_statuses()
     finally:
         bridge.stop()
     return 0
