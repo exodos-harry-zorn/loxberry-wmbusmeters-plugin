@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 import paho.mqtt.client as mqtt
-from common import METER_STATUS_FILE, load_config, resolve_mqtt_settings
+from common import METER_STATUS_FILE, METER_RATES_FILE, load_config, resolve_mqtt_settings
 
 RUNNING = True
 STATUS_STALE_SECONDS = 15 * 60
@@ -55,11 +55,30 @@ class Bridge:
         self.meter_whitelist = [str(x) for x in cfg.get("radio", {}).get("meter_whitelist", []) if x]
         self.meter_blacklist = [str(x) for x in cfg.get("radio", {}).get("meter_blacklist", []) if x]
         self.status_cache: Dict[str, Dict[str, Any]] = self._initial_status_cache()
+        self.rates_cache: Dict[str, Dict[str, Any]] = self._load_rates_cache()
         self.last_status_publish = 0.0
 
         self.publish(f"{self.base_topic}/bridge/status", "online")
         self.publish(f"{self.base_topic}/bridge/mqtt_source", mqtt_cfg.get("source", "unknown"))
         self.publish_statuses(force=True)
+
+    def _load_rates_cache(self) -> Dict[str, Dict[str, Any]]:
+        try:
+            if Path(METER_RATES_FILE).exists():
+                with Path(METER_RATES_FILE).open("r", encoding="utf-8") as f:
+                    return json.load(f)
+        except Exception:
+            logging.exception("Failed to load meter rates file")
+        return {}
+
+    def write_rates_file(self):
+        try:
+            Path(METER_RATES_FILE).parent.mkdir(parents=True, exist_ok=True)
+            with Path(METER_RATES_FILE).open("w", encoding="utf-8") as f:
+                json.dump(self.rates_cache, f, indent=2, ensure_ascii=False)
+                f.write("\n")
+        except Exception:
+            logging.exception("Failed to write meter rates file")
 
     def _initial_status_cache(self) -> Dict[str, Dict[str, Any]]:
         cache: Dict[str, Dict[str, Any]] = {}
@@ -81,6 +100,7 @@ class Bridge:
         self.client.loop_stop()
         self.client.disconnect()
         self.write_status_file()
+        self.write_rates_file()
 
     def publish(self, topic: str, payload: Any, retain: Optional[bool] = None):
         if isinstance(payload, (dict, list)):
@@ -192,8 +212,12 @@ class Bridge:
         self.publish(self.topic(meter_name, "id"), msg.get("id", ""))
         self.publish(self.topic(meter_name, "meter_type"), msg.get("meter", ""))
         self.publish(self.topic(meter_name, "media"), msg.get("media", ""))
-        for key, value in self.normalized_fields(msg):
+        
+        parsed_fields = dict(self.normalized_fields(msg))
+        for key, value in parsed_fields.items():
             self.publish(self.topic(meter_name, key), value)
+            
+        self.process_smart_deltas(meter_id, meter_name, timestamp_epoch, parsed_fields)
 
         entry = self.status_cache.setdefault(meter_id, {
             "status": "offline",
@@ -207,6 +231,72 @@ class Bridge:
         entry["minutes_since_seen"] = 0
         self.set_meter_status(meter_id, "online", publish=True)
         self.write_status_file()
+
+    def process_smart_deltas(self, meter_id: str, meter_name: str, timestamp_epoch: int, parsed_fields: Dict[str, Any]):
+        entry = self.rates_cache.setdefault(meter_id, {})
+        dt_now = datetime.fromtimestamp(timestamp_epoch)
+        today_date = dt_now.strftime("%Y-%m-%d")
+
+        if entry.get("today_date") != today_date:
+            entry["today_date"] = today_date
+            entry["daily_start_volume_m3"] = parsed_fields.get("volume_m3")
+            entry["daily_start_energy_kwh"] = parsed_fields.get("energy_kwh")
+            self.publish(self.topic(meter_name, "today_volume_m3"), 0.0)
+            self.publish(self.topic(meter_name, "today_energy_kwh"), 0.0)
+
+        prev_epoch = entry.get("last_reading_epoch")
+        time_diff = (timestamp_epoch - prev_epoch) if prev_epoch else 0
+        entry["last_reading_epoch"] = timestamp_epoch
+
+        current_vol = parsed_fields.get("volume_m3")
+        if current_vol is not None:
+            try:
+                current_vol = float(current_vol)
+                prev_vol = entry.get("last_volume_m3")
+                start_vol = entry.get("daily_start_volume_m3")
+
+                if prev_vol is not None and prev_vol <= current_vol:
+                    delta_vol = current_vol - prev_vol
+                    self.publish(self.topic(meter_name, "delta_volume_m3"), round(delta_vol, 4))
+                    if time_diff > 0:
+                        flow_m3h = (delta_vol / time_diff) * 3600.0
+                        self.publish(self.topic(meter_name, "calculated_flow_m3h"), round(flow_m3h, 4))
+                
+                if start_vol is not None and start_vol <= current_vol:
+                    today_vol = current_vol - float(start_vol)
+                    self.publish(self.topic(meter_name, "today_volume_m3"), round(today_vol, 4))
+                    
+                entry["last_volume_m3"] = current_vol
+                if start_vol is None:
+                    entry["daily_start_volume_m3"] = current_vol
+            except ValueError:
+                pass
+
+        current_energy = parsed_fields.get("energy_kwh")
+        if current_energy is not None:
+            try:
+                current_energy = float(current_energy)
+                prev_energy = entry.get("last_energy_kwh")
+                start_energy = entry.get("daily_start_energy_kwh")
+
+                if prev_energy is not None and prev_energy <= current_energy:
+                    delta_energy = current_energy - prev_energy
+                    self.publish(self.topic(meter_name, "delta_energy_kwh"), round(delta_energy, 4))
+                    if time_diff > 0:
+                        power_kw = (delta_energy / time_diff) * 3600.0
+                        self.publish(self.topic(meter_name, "calculated_power_kw"), round(power_kw, 4))
+                
+                if start_energy is not None and start_energy <= current_energy:
+                    today_energy = current_energy - float(start_energy)
+                    self.publish(self.topic(meter_name, "today_energy_kwh"), round(today_energy, 4))
+
+                entry["last_energy_kwh"] = current_energy
+                if start_energy is None:
+                    entry["daily_start_energy_kwh"] = current_energy
+            except ValueError:
+                pass
+
+        self.write_rates_file()
 
 
 def parse_line(line: str):
