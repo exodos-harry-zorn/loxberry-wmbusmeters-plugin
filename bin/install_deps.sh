@@ -76,6 +76,10 @@ apt_install(){
   apt-get update || log "apt-get update returned warnings; continuing with available package indexes"
   log "Installing packages"
   apt-get install -y --no-install-recommends     git build-essential pkg-config autoconf automake libtool make     rtl-sdr librtlsdr-dev libusb-1.0-0-dev libxml2-dev     python3 python3-pip python3-paho-mqtt     mosquitto mosquitto-clients ca-certificates sudo
+  # install udev rules for rtl-sdr
+  wget -O /etc/udev/rules.d/20-rtlsdr.rules https://raw.githubusercontent.com/osmocom/rtl-sdr/master/rtl-sdr.rules
+  udevadm control --reload-rules || true
+  udevadm trigger || true
 }
 ensure_python_module(){
   if ! python3 -c 'import paho.mqtt.client' >/dev/null 2>&1; then
