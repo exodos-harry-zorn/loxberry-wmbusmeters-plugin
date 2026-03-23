@@ -130,7 +130,10 @@ def bool_from_form(form, key):
 
 def shell(cmd, timeout=60):
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=timeout)
+        import os
+        env = os.environ.copy()
+        env["PATH"] = env.get("PATH", "") + ":/usr/bin:/usr/local/bin:/usr/sbin:/sbin:/bin"
+        return subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=timeout, env=env)
     except Exception as e:
         log_error(f'shell failed {cmd}: {e}')
         class Dummy:
