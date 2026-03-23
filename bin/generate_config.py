@@ -43,7 +43,6 @@ def write_global_config(cfg: Dict[str, Any], outdir: pathlib.Path) -> None:
         f"device={radio_device_expr(cfg)}",
         f"listento={mode}",
         "format=json",
-        "daemon=no",
         "meterfiles=/tmp/loxberry-wmbusmeters/generated/wmbusmeters.d",
         f"loglevel={radio.get('log_level', 'normal')}",
         f"logtelegrams={'true' if radio.get('log_telegrams', False) else 'false'}",
