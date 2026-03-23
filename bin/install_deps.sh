@@ -80,6 +80,8 @@ apt_install(){
   wget -O /etc/udev/rules.d/20-rtlsdr.rules https://raw.githubusercontent.com/osmocom/rtl-sdr/master/rtl-sdr.rules
   udevadm control --reload-rules || true
   udevadm trigger || true
+  # ensure loxberry user is in plugdev group to access the sdr usb device
+  usermod -a -G plugdev loxberry || true
 }
 ensure_python_module(){
   if ! python3 -c 'import paho.mqtt.client' >/dev/null 2>&1; then
