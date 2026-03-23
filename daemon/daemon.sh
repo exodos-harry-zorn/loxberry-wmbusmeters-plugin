@@ -43,6 +43,10 @@ stop() {
     kill "$pid" 2>/dev/null || true
     sleep 1
   fi
+  # Ensure any orphaned wmbusmeters / publisher processes are killed
+  killall -9 wmbusmeters 2>/dev/null || true
+  # Find and kill any orphaned python publishers from our plugin
+  pkill -f "python3 ${BIN_DIR}/publisher.py" 2>/dev/null || true
   rm -f "$PIDFILE"
   echo "Stopped"
 }
