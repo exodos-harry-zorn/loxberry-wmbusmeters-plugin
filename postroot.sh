@@ -21,6 +21,8 @@ fail() { echo "<ERROR> $*"; exit 1; }
 
 log "Root post-install started"
 mkdir -p "$TMPDIR" "$PCONFIG"
+chmod 777 "$TMPDIR" 2>/dev/null || true
+chmod 666 "$TMPDIR"/*.log "$TMPDIR"/*.txt 2>/dev/null || true
 chmod 755 "$PBIN"/*.sh 2>/dev/null || true
 chmod 755 "$PHTMLAUTH"/*.cgi 2>/dev/null || true
 chmod 755 "$DAEMON_TARGET" 2>/dev/null || true

@@ -8,4 +8,5 @@ if [ ! -f "$PCONFIG/config.json" ] && [ -f "$PCONFIG/config.example.json" ]; the
   echo "<INFO> Created default config.json from config.example.json"
 fi
 mkdir -p /tmp/loxberry-wmbusmeters
+chmod 777 /tmp/loxberry-wmbusmeters 2>/dev/null || true
 exit 0

@@ -8,6 +8,9 @@ LOGFILE="${TMP_DIR}/deps_install.log"
 PIDFILE="${TMP_DIR}/deps_install.pid"
 STATUSFILE="${TMP_DIR}/deps_status.txt"
 mkdir -p "$TMP_DIR"
+chmod 777 "$TMP_DIR" 2>/dev/null || true
+touch "$LOGFILE" "$STATUSFILE" 2>/dev/null || true
+chmod 666 "$LOGFILE" "$STATUSFILE" 2>/dev/null || true
 
 log(){ echo "[$(date -Is)] $*"; }
 need_root(){
