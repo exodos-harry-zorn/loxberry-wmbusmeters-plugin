@@ -65,8 +65,9 @@ def write_meter_files(cfg: Dict[str, Any], outdir: pathlib.Path, allow_missing_i
             continue
         validate_meter(meter, require_id=True)
         lines = [
+            f"name={meter['name']}",
             f"id={meter['id']}",
-            f"type={meter['driver']}",
+            f"driver={meter['driver']}",
         ]
         if meter.get("key"):
             lines.append(f"key={meter['key']}")
