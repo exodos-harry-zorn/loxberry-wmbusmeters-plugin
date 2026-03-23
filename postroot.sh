@@ -12,6 +12,9 @@ PCONFIG="$LBPCONFIG/$PDIR"
 PHTMLAUTH="$LBPHTMLAUTH/$PDIR"
 TMPDIR="/tmp/loxberry-wmbusmeters"
 DAEMON_TARGET="/opt/loxberry/system/daemons/plugins/wmbusmetersbridge"
+
+DAEMON_SOURCE_TEMP="$PTEMPPATH/daemon/daemon.sh"
+DAEMON_SOURCE_BIN="$PBIN/daemon.sh"
 SUDOERS_TEMPLATE="$PTEMPPATH/sudoers/wmbusmetersbridge"
 SUDOERS_DEST="/etc/sudoers.d/50-${PDIR}"
 
@@ -26,6 +29,17 @@ chmod 666 "$TMPDIR"/*.log "$TMPDIR"/*.txt 2>/dev/null || true
 chmod 755 "$PBIN"/*.sh 2>/dev/null || true
 chmod 755 "$PBIN"/*.py 2>/dev/null || true
 chmod 755 "$PHTMLAUTH"/*.cgi 2>/dev/null || true
+
+# Ensure daemon script is installed at the LoxBerry autostart path
+if [ -f "$DAEMON_SOURCE_TEMP" ]; then
+  install -m 755 "$DAEMON_SOURCE_TEMP" "$DAEMON_TARGET"
+  log "Installed daemon script from package temp path to $DAEMON_TARGET"
+elif [ -f "$DAEMON_SOURCE_BIN" ]; then
+  install -m 755 "$DAEMON_SOURCE_BIN" "$DAEMON_TARGET"
+  log "Installed daemon script from bin path to $DAEMON_TARGET"
+else
+  warn "Daemon source script not found (expected $DAEMON_SOURCE_TEMP or $DAEMON_SOURCE_BIN)"
+fi
 chmod 755 "$DAEMON_TARGET" 2>/dev/null || true
 
 if [ ! -f "$PCONFIG/config.json" ] && [ -f "$PCONFIG/config.example.json" ]; then
