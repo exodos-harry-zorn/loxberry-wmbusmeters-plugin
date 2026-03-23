@@ -41,6 +41,11 @@ def write_global_config(cfg: Dict[str, Any], outdir: pathlib.Path) -> None:
     conf = [
         f"device={radio_device_expr(cfg)}",
         "format=json",
+        "logfile=/tmp/loxberry-wmbusmeters/bridge.log",
+        "meterfiles=/tmp/loxberry-wmbusmeters/generated/wmbusmeters.d",
+        "pidfile=/tmp/loxberry-wmbusmeters/wmbusmeters.pid",
+        "shell=/usr/bin/env",
+        "alarmshell=/usr/bin/env",
         f"loglevel={radio.get('log_level', 'normal')}",
         f"logtelegrams={'true' if radio.get('log_telegrams', False) else 'false'}",
         f"ignoreduplicates={'true' if radio.get('ignore_duplicates', True) else 'false'}",
@@ -62,9 +67,8 @@ def write_meter_files(cfg: Dict[str, Any], outdir: pathlib.Path, allow_missing_i
             continue
         validate_meter(meter, require_id=True)
         lines = [
-            f"name={meter['name']}",
             f"id={meter['id']}",
-            f"driver={meter['driver']}",
+            f"type={meter['driver']}",
         ]
         if meter.get("key"):
             lines.append(f"key={meter['key']}")
