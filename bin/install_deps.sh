@@ -83,6 +83,25 @@ ensure_python_module(){
     python3 -m pip install --break-system-packages paho-mqtt
   fi
 }
+install_rtl_wmbus(){
+  if command -v rtl_wmbus >/dev/null 2>&1; then
+    log "rtl_wmbus already present at $(command -v rtl_wmbus)"
+    return 0
+  fi
+  log "Cloning rtl-wmbus repository"
+  WORKDIR=$(mktemp -d)
+  git clone https://github.com/xaelsouth/rtl-wmbus.git "$WORKDIR/rtl-wmbus"
+  cd "$WORKDIR/rtl-wmbus"
+  log "Building rtl_wmbus"
+  make
+  log "Installing rtl_wmbus"
+  cp build/rtl_wmbus /usr/bin/rtl_wmbus
+  chmod +x /usr/bin/rtl_wmbus
+  hash -r
+  rm -rf "$WORKDIR"
+
+}
+
 install_wmbusmeters(){
   if command -v wmbusmeters >/dev/null 2>&1; then
     log "wmbusmeters already present at $(command -v wmbusmeters)"
@@ -124,6 +143,7 @@ run_install(){
   trap 'finish 1' ERR
   apt_install
   ensure_python_module
+  install_rtl_wmbus
   install_wmbusmeters
   if command -v systemctl >/dev/null 2>&1; then
     systemctl enable mosquitto >/dev/null 2>&1 || true
