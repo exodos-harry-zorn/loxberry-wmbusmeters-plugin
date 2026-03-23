@@ -33,7 +33,7 @@ def radio_device_expr(cfg: Dict[str, Any]) -> str:
     device = str(radio.get("device", "rtlwmbus"))
     if device != "rtlwmbus":
         return device
-    return f"rtlwmbus[{rtl_index}]:{mode}(ppm={ppm})"
+    return f"rtlwmbus:{mode}"
 
 
 def write_global_config(cfg: Dict[str, Any], outdir: pathlib.Path) -> None:

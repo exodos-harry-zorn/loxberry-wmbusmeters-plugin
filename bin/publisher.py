@@ -3,6 +3,7 @@ import argparse
 import json
 import logging
 import signal
+import select
 import sys
 import time
 from datetime import datetime, timezone
@@ -318,17 +319,18 @@ def main() -> int:
     bridge = Bridge(load_config())
     try:
         while RUNNING:
-            line = sys.stdin.readline()
-            if line == "":
-                if time.time() - bridge.last_status_publish >= STATUS_PUBLISH_INTERVAL_SECONDS:
-                    bridge.publish_statuses()
-                time.sleep(0.1)
-                continue
-            msg = parse_line(line)
-            if msg:
-                bridge.process(msg)
-                if time.time() - bridge.last_status_publish >= STATUS_PUBLISH_INTERVAL_SECONDS:
-                    bridge.publish_statuses()
+            r, _, _ = select.select([sys.stdin], [], [], 1.0)
+            if r:
+                line = sys.stdin.readline()
+                if line == "":
+                    logging.error("EOF on stdin, wmbusmeters likely crashed or stopped.")
+                    break
+                msg = parse_line(line)
+                if msg:
+                    bridge.process(msg)
+            
+            if time.time() - bridge.last_status_publish >= STATUS_PUBLISH_INTERVAL_SECONDS:
+                bridge.publish_statuses()
     finally:
         bridge.stop()
     return 0

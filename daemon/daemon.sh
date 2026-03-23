@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 set -u
+export PATH="$PATH:/usr/bin:/usr/local/bin:/usr/sbin:/sbin:/bin"
 
 PLUGIN_FOLDER="loxberry-wmbusmeters"
 CONFIG_DIR="${LB_WMBUS_CONFIG_DIR:-/opt/loxberry/config/plugins/${PLUGIN_FOLDER}}"
@@ -30,7 +31,7 @@ start() {
     return 1
   fi
   python3 "$BIN_DIR/generate_config.py" --input "$CONFIG_FILE" --output-dir "$RUNTIME_CONFIG_DIR" || return 1
-  nohup bash -lc "wmbusmeters --silent --useconfig=${RUNTIME_CONFIG_DIR} --format=json | python3 ${BIN_DIR}/publisher.py >>${LOGFILE} 2>&1" >/dev/null 2>&1 &
+  nohup bash -c "wmbusmeters --silent --useconfig=${RUNTIME_CONFIG_DIR} --format=json | python3 ${BIN_DIR}/publisher.py >>${LOGFILE} 2>&1" >/dev/null 2>&1 &
   echo $! > "$PIDFILE"
   echo "Started with PID $(cat "$PIDFILE")"
 }
