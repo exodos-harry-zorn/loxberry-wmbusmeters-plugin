@@ -171,6 +171,7 @@ def resolve_mqtt_settings(cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any
         if not data:
             continue
         candidate_host = _first_nonempty(
+            _nested_get(data, "Mqtt", "Brokerhost"),
             _nested_get(data, "BrokerHost"),
             _nested_get(data, "broker", "host"),
             _nested_get(data, "mqtt", "host"),
@@ -183,6 +184,7 @@ def resolve_mqtt_settings(cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any
         resolved["host"] = candidate_host
         resolved["port"] = _coerce_int(
             _first_nonempty(
+                _nested_get(data, "Mqtt", "Brokerport"),
                 _nested_get(data, "BrokerPort"),
                 _nested_get(data, "broker", "port"),
                 _nested_get(data, "mqtt", "port"),
@@ -192,12 +194,14 @@ def resolve_mqtt_settings(cfg: Optional[Dict[str, Any]] = None) -> Dict[str, Any
             resolved["port"],
         )
         resolved["username"] = _first_nonempty(
+            _nested_get(data, "Mqtt", "Brokeruser"),
             _nested_get(data, "BrokerUsername"),
             _nested_get(data, "broker", "username"),
             _nested_get(data, "mqtt", "username"),
             _nested_get(data, "username"),
         ) or ""
         resolved["password"] = _first_nonempty(
+            _nested_get(data, "Mqtt", "Brokerpass"),
             _nested_get(data, "BrokerPassword"),
             _nested_get(data, "broker", "password"),
             _nested_get(data, "mqtt", "password"),
