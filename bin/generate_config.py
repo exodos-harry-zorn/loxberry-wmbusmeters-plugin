@@ -28,9 +28,9 @@ def validate_meter(meter: Dict[str, Any], require_id: bool = True) -> None:
 def radio_device_expr(cfg: Dict[str, Any]) -> str:
     radio = cfg.get("radio", {})
     device = str(radio.get("device", "rtlwmbus"))
+    # Just output rtlwmbus and let wmbusmeters grab the first one
     if device == "rtlwmbus":
-        rtl_index = int(radio.get("rtl_index", 0))
-        return f"rtlwmbus[{rtl_index}]"
+        return "rtlwmbus"
     if device == "auto":
         return device
     return device

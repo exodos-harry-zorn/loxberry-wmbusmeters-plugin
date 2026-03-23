@@ -328,6 +328,8 @@ def main() -> int:
                 msg = parse_line(line)
                 if msg:
                     bridge.process(msg)
+                elif line.strip():
+                    logging.info(f"wmbusmeters: {line.strip()}")
             
             if time.time() - bridge.last_status_publish >= STATUS_PUBLISH_INTERVAL_SECONDS:
                 bridge.publish_statuses()
