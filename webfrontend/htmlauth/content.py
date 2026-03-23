@@ -130,7 +130,7 @@ def bool_from_form(form, key):
 
 def shell(cmd, timeout=60):
     try:
-        return subprocess.run(cmd, capture_output=True, text=True, timeout=timeout)
+        return subprocess.run(cmd, capture_output=True, text=True, errors="replace", timeout=timeout)
     except Exception as e:
         log_error(f'shell failed {cmd}: {e}')
         class Dummy:
@@ -622,7 +622,7 @@ def render_mqtt(cfg):
 
 def get_connected_dongles_html():
     try:
-        res = subprocess.run(["lsusb"], capture_output=True, text=True, timeout=5)
+        res = subprocess.run(["lsusb"], capture_output=True, text=True, errors="replace", timeout=5)
         dongles = []
         for line in res.stdout.splitlines():
             line_lower = line.lower()
@@ -631,7 +631,7 @@ def get_connected_dongles_html():
                 dongles.append(parts[2].strip() if len(parts) == 3 else line.strip())
 
         if command_exists('rtl_test'):
-            res_rtl = subprocess.run(['rtl_test', '-t'], capture_output=True, text=True, timeout=5)
+            res_rtl = subprocess.run(['rtl_test', '-t'], capture_output=True, text=True, errors="replace", timeout=5)
             rtl_output = res_rtl.stderr + res_rtl.stdout
             rtl_dongles = []
             for line in rtl_output.splitlines():

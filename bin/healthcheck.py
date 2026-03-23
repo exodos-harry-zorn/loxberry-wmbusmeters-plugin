@@ -10,7 +10,7 @@ LOG_FILE = TMP_DIR / "healthcheck.log"
 
 def command_exists(name):
     try:
-        subprocess.run(['bash', '-lc', f'command -v {name}'], capture_output=True, text=True, check=True, timeout=10)
+        subprocess.run(['bash', '-lc', f'command -v {name}'], capture_output=True, text=True, errors="replace", check=True, timeout=10)
         return True
     except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
         return False
@@ -18,7 +18,7 @@ def command_exists(name):
 def run_rtl_test():
     try:
         # Try to run rtl_test for a very short duration to check dongle presence
-        result = subprocess.run(['rtl_test', '-t'], capture_output=True, text=True, check=True, timeout=5)
+        result = subprocess.run(['rtl_test', '-t'], capture_output=True, text=True, errors="replace", check=True, timeout=5)
         if "No supported devices found." in result.stderr:
             return False, "RTL-SDR device not found."
         return True, "RTL-SDR device found and working."
