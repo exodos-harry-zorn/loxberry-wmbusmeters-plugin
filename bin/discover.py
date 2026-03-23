@@ -9,7 +9,7 @@ from pathlib import Path
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Run a timed wmbusmeters discovery session")
-    parser.add_argument("--mode", default="t1", help="Discovery mode, e.g. t1, c1, t1,c1")
+    parser.add_argument("--device", default="auto:t1", help="Device string, e.g. rtlwmbus:t1")
     parser.add_argument("--seconds", type=int, default=30)
     parser.add_argument("--binary", default="wmbusmeters")
     parser.add_argument("--logfile", required=False)
@@ -21,7 +21,7 @@ def main() -> int:
     else:
         out = sys.stdout
 
-    cmd = [args.binary, f"auto:{args.mode}"]
+    cmd = [args.binary, args.device]
     print(f"Starting discovery: {' '.join(cmd)} for {args.seconds}s", file=out)
     out.flush()
     env = os.environ.copy()

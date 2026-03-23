@@ -24,6 +24,7 @@ mkdir -p "$TMPDIR" "$PCONFIG"
 chmod 777 "$TMPDIR" 2>/dev/null || true
 chmod 666 "$TMPDIR"/*.log "$TMPDIR"/*.txt 2>/dev/null || true
 chmod 755 "$PBIN"/*.sh 2>/dev/null || true
+chmod 755 "$PBIN"/*.py 2>/dev/null || true
 chmod 755 "$PHTMLAUTH"/*.cgi 2>/dev/null || true
 chmod 755 "$DAEMON_TARGET" 2>/dev/null || true
 
@@ -38,6 +39,7 @@ if [ -f "$SUDOERS_TEMPLATE" ]; then
   sed \
     -e "s|REPLACEDAEMONPATH|$DAEMON_TARGET|g" \
     -e "s|REPLACEINSTALLERPATH|$PBIN/install_deps.sh|g" \
+    -e "s|REPLACEDISCOVERPATH|$PBIN/discover.py|g" \
     "$SUDOERS_TEMPLATE" > "$TMP_SUDOERS"
   chmod 440 "$TMP_SUDOERS"
   if command -v visudo >/dev/null 2>&1; then
