@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 import argparse
 import subprocess
+import os
 import sys
 import time
 from pathlib import Path
@@ -23,7 +24,9 @@ def main() -> int:
     cmd = [args.binary, f"auto:{args.mode}"]
     print(f"Starting discovery: {' '.join(cmd)} for {args.seconds}s", file=out)
     out.flush()
-    proc = subprocess.Popen(cmd, stdout=out, stderr=out, text=True)
+    env = os.environ.copy()
+    env["PATH"] = env.get("PATH", "") + ":/usr/bin:/usr/local/bin:/usr/sbin:/sbin:/bin"
+    proc = subprocess.Popen(cmd, stdout=out, stderr=out, text=True, env=env)
     try:
         time.sleep(max(1, args.seconds))
     finally:

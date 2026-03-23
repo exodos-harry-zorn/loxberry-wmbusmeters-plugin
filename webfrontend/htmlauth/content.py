@@ -153,6 +153,7 @@ def deps_status():
         'python3': command_exists('python3'),
         'mosquitto_pub': command_exists('mosquitto_pub'),
         'rtl_test': command_exists('rtl_test'),
+        'rtl_wmbus': command_exists('rtl_wmbus'),
         'wmbusmeters': command_exists('wmbusmeters'),
         'installer': INSTALLER.exists(),
         'sudo_daemon': sudo_shell([str(DAEMON_PATH), 'status']).returncode in (0, 1) if DAEMON_PATH.exists() else False,
