@@ -423,9 +423,11 @@ def handle_action(form, cfg):
             rtl_index = int(radio.get('rtl_index', 0))
             device = str(radio.get('device', 'rtlwmbus')).strip()
             if device == 'rtlwmbus':
-                device_expr = f'rtlwmbus[{rtl_index}]:{mode}(ppm={ppm})'
+                device_expr = f'rtlwmbus:{mode}'
+            elif device == 'auto':
+                device_expr = f'auto:{mode}'
             else:
-                device_expr = device
+                device_expr = f'{device}:{mode}'
 
             result = sudo_shell([
                 str(discover), '--device', device_expr,
