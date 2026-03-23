@@ -27,19 +27,21 @@ def validate_meter(meter: Dict[str, Any], require_id: bool = True) -> None:
 
 def radio_device_expr(cfg: Dict[str, Any]) -> str:
     radio = cfg.get("radio", {})
-    ppm = int(radio.get("ppm", 0))
-    mode = str(radio.get("mode", "t1")).strip().lower()
-    rtl_index = int(radio.get("rtl_index", 0))
     device = str(radio.get("device", "rtlwmbus"))
-    if device != "rtlwmbus":
+    if device == "rtlwmbus":
+        rtl_index = int(radio.get("rtl_index", 0))
+        return f"rtlwmbus[{rtl_index}]"
+    if device == "auto":
         return device
-    return f"rtlwmbus:{mode}"
+    return device
 
 
 def write_global_config(cfg: Dict[str, Any], outdir: pathlib.Path) -> None:
     radio = cfg.get("radio", {})
+    mode = str(radio.get("mode", "t1")).strip().lower()
     conf = [
         f"device={radio_device_expr(cfg)}",
+        f"listento={mode}",
         "format=json",
         "logfile=/tmp/loxberry-wmbusmeters/bridge.log",
         "meterfiles=/tmp/loxberry-wmbusmeters/generated/wmbusmeters.d",
