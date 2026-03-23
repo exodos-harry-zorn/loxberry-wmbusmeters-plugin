@@ -21,7 +21,7 @@ def main() -> int:
     else:
         out = sys.stdout
 
-    cmd = [args.binary, args.device]
+    cmd = [args.binary, "--format=json", args.device]
     print(f"Starting discovery: {' '.join(cmd)} for {args.seconds}s", file=out)
     out.flush()
     env = os.environ.copy()
