@@ -440,7 +440,7 @@ def handle_action(form, cfg):
         else:
             messages.append('discover.py not found.')
     elif action == 'clear_discovery_log':
-        DISCOVERY_LOG.write_text('', encoding='utf-8')
+        sudo_shell(['bash', '-c', f'echo -n > {DISCOVERY_LOG}'])
         messages.append('Discovery log cleared.')
     elif action == 'run_healthcheck':
         healthcheck_script = BIN_DIR / 'healthcheck.py'
