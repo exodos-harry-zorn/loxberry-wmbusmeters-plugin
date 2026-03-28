@@ -1077,10 +1077,10 @@ def render_discovery(cfg):
     return f'''
     
     <style>
-      .log-box { max-height: 260px; overflow: auto; }
-      .ux-callout { background:#eef5fb; border-left:4px solid var(--blue); padding:14px 16px; margin-bottom:16px; }
-      .ux-callout ol { margin: 8px 0 0 18px; }
-      .muted-note { color:#666; font-size:13px; }
+      .log-box {{ max-height: 260px; overflow: auto; }}
+      .ux-callout {{ background:#eef5fb; border-left:4px solid var(--blue); padding:14px 16px; margin-bottom:16px; }}
+      .ux-callout ol {{ margin: 8px 0 0 18px; }}
+      .muted-note {{ color:#666; font-size:13px; }}
     </style>
     <div class="ux-callout">
       <strong>Recommended flow</strong>
