@@ -1070,24 +1070,48 @@ def render_discovery(cfg):
         '''
 
     return f'''
+    
+    <style>
+      .log-box { max-height: 260px; overflow: auto; }
+      .ux-callout { background:#eef5fb; border-left:4px solid var(--blue); padding:14px 16px; margin-bottom:16px; }
+      .ux-callout ol { margin: 8px 0 0 18px; }
+      .muted-note { color:#666; font-size:13px; }
+    </style>
+    <div class="ux-callout">
+      <strong>Recommended flow</strong>
+      <ol>
+        <li>Run discovery for 60-90 seconds.</li>
+        <li>Use <em>Add new meter</em> or <em>Add draft meter</em> for each detected device.</li>
+        <li>Switch to <em>Meters</em>, verify IDs / drivers, then click <em>Save All Meters</em>.</li>
+        <li>Go to <em>Overview</em> and start or restart the bridge.</li>
+      </ol>
+    </div>
+
+    <div class="card" style="margin-bottom:20px;">
+      <h2>Discovery</h2>
+      <p>Discovery does not need configured meter IDs. During discovery the plugin temporarily pauses the bridge to free the SDR, then restarts it afterwards.</p>
+      <div class="button-row">
+        <button name="action" value="discover">Run discovery</button>
+        <button name="action" value="clear_discovery_log" class="secondary">Clear discovery log</button>
+      </div>
+      <p class="muted-note">Tip: if a meter shows <em>driver incomplete</em>, add it as draft and confirm the driver manually in the Meters tab.</p>
+      {discovered_meters_html or '<div class="ui-corner-all ui-shadow ui-bar-a" style="margin:1em 0; background:#fff5d6; color:#8b6500;"><p>No meters parsed yet. Run discovery and wait for telegrams, then this table will appear here.</p></div>'}
+    </div>
+
     <div class="grid two">
       <div class="card">
-        <h2>Discovery</h2>
-        <p>Discovery does not need configured meter IDs. The plugin will temporarily stop the bridge during discovery to free the SDR, then restart it afterwards. Detected meters from discovery and recent bridge logs are merged below.</p>
-        <div class="button-row">
-          <button name="action" value="discover">Run discovery</button>
-          <button name="action" value="clear_discovery_log" class="secondary">Clear discovery log</button>
-        </div>
-        <pre>{esc(discovery_log or 'No discovery log yet.')}</pre>
-        {discovered_meters_html}
+        <h2>Discovery log (technical)</h2>
+        <p class="muted-note">Low-level SDR / discovery output for troubleshooting.</p>
+        <div class="log-box"><pre>{esc(discovery_log or 'No discovery log yet.')}</pre></div>
       </div>
       <div class="card">
-        <h2>Bridge log</h2>
+        <h2>Bridge log (technical)</h2>
+        <p class="muted-note">Runtime telegram log from the bridge. Use this mainly for troubleshooting.</p>
         <div class="button-row">
-          <button name="action" value="status" class="secondary">Refresh status</button>
           <button name="action" value="restart">Restart bridge</button>
+          <button name="action" value="status" class="secondary">Refresh bridge status</button>
         </div>
-        <pre>{esc(bridge_log or 'No bridge log yet.')}</pre>
+        <div class="log-box"><pre>{esc(bridge_log or 'No bridge log yet.')}</pre></div>
       </div>
     </div>
 
@@ -1095,7 +1119,7 @@ def render_discovery(cfg):
 
     <div class="card">
       <h2>Dependency installer log</h2>
-      <pre>{esc(deps_log or 'No dependency installer log yet.')}</pre>
+      <div class="log-box"><pre>{esc(deps_log or 'No dependency installer log yet.')}</pre></div>
     </div>
     '''
 
