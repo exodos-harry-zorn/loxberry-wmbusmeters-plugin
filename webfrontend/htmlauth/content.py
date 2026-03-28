@@ -328,6 +328,7 @@ def save_from_form(form, cfg):
         'qos': int(form.get('mqtt_qos', '1') or '1'),
         'client_id': cfg.get('mqtt', {}).get('client_id', 'loxberry-wmbusmeters'),
     }
+    manual_whitelist = [x.strip() for x in form.get('radio_meter_whitelist', '').split(',') if x.strip()]
     cfg['radio'] = {
         'device': form.get('radio_device', 'rtlwmbus'),
         'mode': form.get('radio_mode', 't1'),
@@ -338,7 +339,7 @@ def save_from_form(form, cfg):
         'log_telegrams': bool_from_form(form, 'radio_log_telegrams'),
         'ignore_duplicates': bool_from_form(form, 'radio_ignore_duplicates'),
         'discovery_seconds': int(form.get('radio_discovery_seconds', '30') or '30'),
-        'meter_whitelist': [x.strip() for x in form.get('radio_meter_whitelist', '').split(',') if x.strip()],
+        'meter_whitelist': manual_whitelist,
         'meter_blacklist': [x.strip() for x in form.get('radio_meter_blacklist', '').split(',') if x.strip()],
     }
 
@@ -379,6 +380,10 @@ def save_from_form(form, cfg):
             new_meters.append(meter)
 
     cfg['meters'] = new_meters
+    auto_whitelist = [m['id'] for m in new_meters if m.get('enabled', True) and m.get('id')]
+    if auto_whitelist:
+        cfg['radio']['meter_whitelist'] = auto_whitelist
+        warnings.append('Whitelist auto-synced from enabled configured meter IDs.')
     save_config(cfg)
     return warnings
 
@@ -784,7 +789,7 @@ def render_radio(cfg):
         <label class="checkbox"><input type="checkbox" name="radio_log_telegrams" {'checked' if radio.get('log_telegrams', False) else ''}> Log telegrams</label>
         <label class="checkbox"><input type="checkbox" name="radio_ignore_duplicates" {'checked' if radio.get('ignore_duplicates', True) else ''}> Ignore duplicates</label>
       </div>
-      <h3>Meter Filtering (IDs separated by commas)</h3>
+      <h3>Meter Filtering (IDs separated by commas)</h3><p class="footerhint">When you save configured meters, the whitelist is auto-synced from enabled meter IDs so you usually do not need to maintain it manually.</p>
       <label>Whitelist (only process these meters)
         <input type="text" name="radio_meter_whitelist" value="{esc(','.join(radio.get('meter_whitelist', [])))}">
       </label>
