@@ -31,6 +31,8 @@ PID_FILE = TMP_DIR / 'bridge.pid'
 
 HEX_16 = re.compile(r'^[0-9A-Fa-f]{32}$')
 METER_NAME_SAFE = re.compile(r'[^A-Za-z0-9_.-]+')
+DISCOVERY_ID_RE = re.compile(r'(?:Received telegram from|id:s of all telegrams heard|telegram from:)\s*([0-9A-Fa-f]+)', re.IGNORECASE)
+DISCOVERY_DRIVER_RE = re.compile(r'(?:driver|meter(?:_type)?)\s*[:=]\s*([A-Za-z0-9_.-]+)', re.IGNORECASE)
 STATUS_STALE_MINUTES = 15
 STATUS_OFFLINE_MINUTES = 60
 
@@ -473,38 +475,76 @@ def parse_discovery_log(log_path: Path) -> list[dict]:
         if not log_path.exists():
             return []
         content = log_path.read_text(encoding='utf-8', errors='replace').splitlines()
-        for line in content:
-            line = line.strip()
-            if not (line.startswith('{') and line.endswith('}')):
+        pending_id = None
+        for raw_line in content:
+            line = raw_line.strip()
+            if not line:
                 continue
-            try:
-                data = json.loads(line)
-            except json.JSONDecodeError:
+
+            data = None
+            if line.startswith('{') and line.endswith('}'):
+                try:
+                    parsed = json.loads(line)
+                    if isinstance(parsed, dict):
+                        data = parsed
+                except json.JSONDecodeError:
+                    data = None
+
+            if data is not None:
+                meter_id = normalize_meter_id(data.get('id'))
+                driver = normalize_discovered_driver(data)
+                if not meter_id:
+                    continue
+                key = normalize_key(data.get('key', ''))
+                current = meters.get(meter_id, {
+                    'id': meter_id,
+                    'driver': driver,
+                    'key': '',
+                    'name': normalize_discovered_name(data, meter_id, driver),
+                    'source_name': str(data.get('name') or '').strip(),
+                    'last_seen': str(data.get('timestamp') or '').strip(),
+                    'telegram_count': 0,
+                    'complete': bool(driver),
+                })
+                if driver:
+                    current['driver'] = driver
+                    current['complete'] = True
+                current['name'] = current.get('name') or normalize_discovered_name(data, meter_id, driver)
+                if key and not current.get('key'):
+                    current['key'] = key
+                if data.get('timestamp'):
+                    current['last_seen'] = str(data.get('timestamp'))
+                current['telegram_count'] = int(current.get('telegram_count', 0)) + 1
+                meters[meter_id] = current
+                pending_id = meter_id
                 continue
-            if not isinstance(data, dict):
+
+            match_id = DISCOVERY_ID_RE.search(line)
+            if match_id:
+                meter_id = normalize_meter_id(match_id.group(1))
+                if meter_id:
+                    current = meters.get(meter_id, {
+                        'id': meter_id,
+                        'driver': '',
+                        'key': '',
+                        'name': normalize_discovered_name({}, meter_id, ''),
+                        'source_name': '',
+                        'last_seen': '',
+                        'telegram_count': 0,
+                        'complete': False,
+                    })
+                    current['telegram_count'] = int(current.get('telegram_count', 0)) + 1
+                    meters[meter_id] = current
+                    pending_id = meter_id
                 continue
-            meter_id = normalize_meter_id(data.get('id'))
-            driver = normalize_discovered_driver(data)
-            if not meter_id or not driver:
+
+            match_driver = DISCOVERY_DRIVER_RE.search(line)
+            if match_driver and pending_id and pending_id in meters:
+                driver = normalize_discovered_driver({'driver': match_driver.group(1)})
+                if driver:
+                    meters[pending_id]['driver'] = driver
+                    meters[pending_id]['complete'] = True
                 continue
-            key = normalize_key(data.get('key', ''))
-            current = meters.get(meter_id, {
-                'id': meter_id,
-                'driver': driver,
-                'key': '',
-                'name': normalize_discovered_name(data, meter_id, driver),
-                'source_name': str(data.get('name') or '').strip(),
-                'last_seen': str(data.get('timestamp') or '').strip(),
-                'telegram_count': 0,
-            })
-            current['driver'] = current.get('driver') or driver
-            current['name'] = current.get('name') or normalize_discovered_name(data, meter_id, driver)
-            if key and not current.get('key'):
-                current['key'] = key
-            if data.get('timestamp'):
-                current['last_seen'] = str(data.get('timestamp'))
-            current['telegram_count'] = int(current.get('telegram_count', 0)) + 1
-            meters[meter_id] = current
     except Exception as e:
         log_error(f'parse_discovery_log failed for {log_path}: {e}')
     return sorted(meters.values(), key=lambda item: (item.get('id') or ''))
@@ -927,12 +967,18 @@ def render_discovery(cfg):
             suggested_name = meter.get('name') or normalize_meter_name(suggested_label, f"meter_{meter['id'][-6:]}")
             while suggested_name in existing_names and existing_idx is None:
                 suggested_name = normalize_meter_name(f"{suggested_name}_{len(existing_names)+1}", suggested_name)
-            action_label = 'Update existing' if existing_idx is not None else 'Add new meter'
-            action_tag = '<span class="discovery-tag warn">matches existing ID</span>' if existing_idx is not None else '<span class="discovery-tag good">new meter</span>'
+            is_complete = bool(meter.get('complete')) and bool(meter.get('driver'))
+            action_label = 'Update existing' if existing_idx is not None else ('Add new meter' if is_complete else 'Add draft meter')
+            if existing_idx is not None:
+                action_tag = '<span class="discovery-tag warn">matches existing ID</span>'
+            elif is_complete:
+                action_tag = '<span class="discovery-tag good">new meter</span>'
+            else:
+                action_tag = '<span class="discovery-tag warn">ID found, driver incomplete</span>'
             rows.append(f'''
             <tr>
                 <td><code>{esc(meter['id'])}</code><br>{action_tag}</td>
-                <td>{esc(meter['driver'])}</td>
+                <td>{esc(meter['driver'] or 'unknown')}</td>
                 <td>{esc(key_masked(meter['key']))}</td>
                 <td>{esc(str(meter.get('telegram_count', 1)))}</td>
                 <td>{esc(meter.get('last_seen') or '-')}</td>
@@ -973,7 +1019,7 @@ def render_discovery(cfg):
                 $('.add-discovered-meter-btn').off('click').on('click', function() {{
                     const meterData = {{
                         id: String($(this).data('meter-id') || '').trim(),
-                        driver: String($(this).data('meter-driver') || '').trim(),
+                        driver: String($(this).data('meter-driver') || '').trim() || 'auto',
                         key: String($(this).data('meter-key') || '').trim(),
                         name: String($(this).data('meter-name') || '').trim(),
                         label: String($(this).data('meter-label') || '').trim(),
@@ -985,6 +1031,8 @@ def render_discovery(cfg):
                     }}
                     const result = window.wmbusDiscoveryMerge(meterData);
                     $('input[name="tab"]').val('meters');
+                    $('.section').hide();
+                    $('#section-meters').show();
                     if (result && result.index !== undefined) {{
                         const $target = $(`#meter-container .meter-card[data-meter-index="${{result.index}}"]`);
                         if ($target.length) $('html, body').animate({{ scrollTop: $target.offset().top - 80 }}, 250);

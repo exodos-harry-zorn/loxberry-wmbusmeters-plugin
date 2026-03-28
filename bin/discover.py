@@ -17,7 +17,7 @@ def main() -> int:
 
     if args.logfile:
         Path(args.logfile).parent.mkdir(parents=True, exist_ok=True)
-        out = open(args.logfile, "a", encoding="utf-8")
+        out = open(args.logfile, "w", encoding="utf-8")
     else:
         out = sys.stdout
 
