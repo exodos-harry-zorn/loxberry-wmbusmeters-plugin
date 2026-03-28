@@ -251,9 +251,9 @@ def meter_status_class(status):
 
 def normalize_discovered_driver(data):
     return str(
-        data.get('meter_type')
+        data.get('driver')
+        or data.get('meter_type')
         or data.get('meter')
-        or data.get('driver')
         or data.get('device')
         or ''
     ).strip()
