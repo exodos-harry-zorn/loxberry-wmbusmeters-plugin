@@ -14,17 +14,36 @@ PIPELINE_PIDFILE="${WORKDIR}/bridge.pipeline.pid"
 
 mkdir -p "$WORKDIR"
 
+process_matches() {
+  pgrep -f "wmbusmeters --useconfig=${RUNTIME_CONFIG_DIR}" >/dev/null 2>&1 ||   pgrep -f "python3 ${BIN_DIR}/publisher.py" >/dev/null 2>&1 ||   pgrep -f "rtl_sdr .*868.625M" >/dev/null 2>&1 ||   pgrep -f "rtl_wmbus -s -f" >/dev/null 2>&1
+}
+
 is_running() {
-  [[ -f "$PIDFILE" ]] || return 1
+  [[ -f "$PIDFILE" ]] || { process_matches; return $?; }
   local pid
   pid="$(cat "$PIDFILE" 2>/dev/null)"
-  [[ -n "$pid" ]] || return 1
-  kill -0 "$pid" 2>/dev/null
+  [[ -n "$pid" ]] || { process_matches; return $?; }
+  kill -0 "$pid" 2>/dev/null || { process_matches; return $?; }
+}
+
+kill_descendants() {
+  local parent="$1"
+  local child
+  for child in $(pgrep -P "$parent" 2>/dev/null); do
+    kill_descendants "$child"
+    kill "$child" 2>/dev/null || true
+    sleep 0.2
+    kill -9 "$child" 2>/dev/null || true
+  done
 }
 
 start() {
+  if process_matches; then
+    stop >/dev/null 2>&1 || true
+    sleep 1
+  fi
   if is_running; then
-    echo "Already running with PID $(cat "$PIDFILE")"
+    echo "Already running with PID $(cat "$PIDFILE" 2>/dev/null || echo unknown)"
     return 0
   fi
   if ! command -v wmbusmeters >/dev/null 2>&1; then
@@ -39,15 +58,21 @@ start() {
 }
 
 stop() {
-  if is_running; then
+  if [[ -f "$PIDFILE" ]]; then
     local pid
-    pid="$(cat "$PIDFILE")"
-    kill "$pid" 2>/dev/null || true
-    sleep 1
-    kill -9 "$pid" 2>/dev/null || true
+    pid="$(cat "$PIDFILE" 2>/dev/null || true)"
+    if [[ -n "$pid" ]]; then
+      kill_descendants "$pid"
+      kill "$pid" 2>/dev/null || true
+      sleep 1
+      kill -9 "$pid" 2>/dev/null || true
+    fi
   fi
   pkill -f "python3 ${BIN_DIR}/publisher.py" 2>/dev/null || true
   pkill -f "wmbusmeters --useconfig=${RUNTIME_CONFIG_DIR}" 2>/dev/null || true
+  pkill -f "rtl_sdr .*868.625M" 2>/dev/null || true
+  pkill -f "rtl_wmbus -s -f" 2>/dev/null || true
+  pkill -f "tail -f /tmp/wmbusmeters_rtlsdr" 2>/dev/null || true
   rm -f "$PIDFILE" "$PIPELINE_PIDFILE"
   echo "Stopped"
 }

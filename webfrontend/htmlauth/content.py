@@ -32,7 +32,8 @@ PID_FILE = TMP_DIR / 'bridge.pid'
 HEX_16 = re.compile(r'^[0-9A-Fa-f]{32}$')
 METER_NAME_SAFE = re.compile(r'[^A-Za-z0-9_.-]+')
 DISCOVERY_ID_RE = re.compile(r'(?:Received telegram from|id:s of all telegrams heard|telegram from:)\s*([0-9A-Fa-f]+)', re.IGNORECASE)
-DISCOVERY_DRIVER_RE = re.compile(r'(?:driver|meter(?:_type)?)\s*[:=]\s*([A-Za-z0-9_.-]+)', re.IGNORECASE)
+DISCOVERY_DRIVER_RE = re.compile(r'(?:driver|meter(?:_type)?)\s*[:=]\s*([A-Za-z0-9_.!-]+)', re.IGNORECASE)
+DISCOVERY_META_RE = re.compile(r'^(manufacturer|type|ver|device|rssi|link mode)\s*:\s*(.+)$', re.IGNORECASE)
 STATUS_STALE_MINUTES = 15
 STATUS_OFFLINE_MINUTES = 60
 
@@ -510,11 +511,25 @@ def parse_discovery_log(log_path: Path) -> list[dict]:
                     'last_seen': str(data.get('timestamp') or '').strip(),
                     'telegram_count': 0,
                     'complete': bool(driver),
+                    'manufacturer': str(data.get('manufacturer') or '').strip(),
+                    'type': str(data.get('type') or '').strip(),
+                    'ver': str(data.get('ver') or '').strip(),
+                    'device': str(data.get('device') or '').strip(),
+                    'rssi': str(data.get('rssi') or '').strip(),
+                    'link_mode': str(data.get('link_mode') or data.get('link mode') or '').strip(),
+                    'encrypted': bool(data.get('encrypted')) or ('encrypted' in str(data.get('type') or '').lower()),
                 })
                 if driver:
                     current['driver'] = driver
                     current['complete'] = True
                 current['name'] = current.get('name') or normalize_discovered_name(data, meter_id, driver)
+                for key, source in [('manufacturer','manufacturer'),('type','type'),('ver','ver'),('device','device'),('rssi','rssi')]:
+                    if data.get(source) and not current.get(key):
+                        current[key] = str(data.get(source)).strip()
+                link_mode = data.get('link_mode') or data.get('link mode')
+                if link_mode and not current.get('link_mode'):
+                    current['link_mode'] = str(link_mode).strip()
+                current['encrypted'] = bool(current.get('encrypted')) or ('encrypted' in str(current.get('type') or '').lower())
                 if key and not current.get('key'):
                     current['key'] = key
                 if data.get('timestamp'):
@@ -537,6 +552,13 @@ def parse_discovery_log(log_path: Path) -> list[dict]:
                         'last_seen': '',
                         'telegram_count': 0,
                         'complete': False,
+                        'manufacturer': '',
+                        'type': '',
+                        'ver': '',
+                        'device': '',
+                        'rssi': '',
+                        'link_mode': '',
+                        'encrypted': False,
                     })
                     current['telegram_count'] = int(current.get('telegram_count', 0)) + 1
                     meters[meter_id] = current
@@ -546,9 +568,20 @@ def parse_discovery_log(log_path: Path) -> list[dict]:
             match_driver = DISCOVERY_DRIVER_RE.search(line)
             if match_driver and pending_id and pending_id in meters:
                 driver = normalize_discovered_driver({'driver': match_driver.group(1)})
-                if driver:
+                if driver and driver != 'unknown':
                     meters[pending_id]['driver'] = driver
                     meters[pending_id]['complete'] = True
+                continue
+
+            match_meta = DISCOVERY_META_RE.search(line)
+            if match_meta and pending_id and pending_id in meters:
+                meta_key = match_meta.group(1).strip().lower()
+                meta_value = match_meta.group(2).strip()
+                key_map = {'link mode': 'link_mode'}
+                target_key = key_map.get(meta_key, meta_key)
+                meters[pending_id][target_key] = meta_value
+                if target_key == 'type' and 'encrypted' in meta_value.lower():
+                    meters[pending_id]['encrypted'] = True
                 continue
     except Exception as e:
         log_error(f'parse_discovery_log failed for {log_path}: {e}')
@@ -566,6 +599,7 @@ def collect_discovered_meters(*paths: Path) -> list[dict]:
             current = merged.get(meter_id, {
                 'id': meter_id, 'driver': '', 'key': '', 'name': meter.get('name', ''),
                 'source_name': meter.get('source_name', ''), 'last_seen': '', 'telegram_count': 0, 'complete': False,
+                'manufacturer': '', 'type': '', 'ver': '', 'device': '', 'rssi': '', 'link_mode': '', 'encrypted': False,
             })
             if meter.get('driver') and (not current.get('driver') or current.get('driver') == 'unknown'):
                 current['driver'] = meter.get('driver')
@@ -577,6 +611,10 @@ def collect_discovered_meters(*paths: Path) -> list[dict]:
                 current['source_name'] = meter.get('source_name')
             if meter.get('last_seen'):
                 current['last_seen'] = meter.get('last_seen')
+            for key in ('manufacturer','type','ver','device','rssi','link_mode'):
+                if meter.get(key) and not current.get(key):
+                    current[key] = meter.get(key)
+            current['encrypted'] = bool(current.get('encrypted')) or bool(meter.get('encrypted'))
             current['telegram_count'] = int(current.get('telegram_count', 0)) + int(meter.get('telegram_count', 0) or 0)
             current['complete'] = bool(current.get('driver')) and current.get('driver') != 'unknown'
             merged[meter_id] = current
@@ -1011,6 +1049,11 @@ def render_discovery(cfg):
             <tr>
                 <td><code>{esc(meter['id'])}</code><br>{action_tag}</td>
                 <td>{esc(meter['driver'] or 'unknown')}</td>
+                <td>{esc(meter.get('manufacturer') or '-')}</td>
+                <td>{esc(meter.get('type') or '-')}</td>
+                <td>{esc(meter.get('link_mode') or '-')}</td>
+                <td>{esc(meter.get('rssi') or '-')}</td>
+                <td>{'yes' if meter.get('encrypted') else 'no'}</td>
                 <td>{esc(key_masked(meter['key']))}</td>
                 <td>{esc(str(meter.get('telegram_count', 1)))}</td>
                 <td>{esc(meter.get('last_seen') or '-')}</td>
@@ -1036,6 +1079,11 @@ def render_discovery(cfg):
                 <tr>
                     <th>ID</th>
                     <th>Driver</th>
+                    <th>Manufacturer</th>
+                    <th>Type</th>
+                    <th>Mode</th>
+                    <th>RSSI</th>
+                    <th>Encrypted</th>
                     <th>AES key</th>
                     <th>Telegrams</th>
                     <th>Last seen</th>
