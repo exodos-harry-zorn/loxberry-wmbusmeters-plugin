@@ -550,6 +550,33 @@ def parse_discovery_log(log_path: Path) -> list[dict]:
     return sorted(meters.values(), key=lambda item: (item.get('id') or ''))
 
 
+
+def collect_discovered_meters(*paths: Path) -> list[dict]:
+    merged = {}
+    for path in paths:
+        for meter in parse_discovery_log(path):
+            meter_id = normalize_meter_id(meter.get('id'))
+            if not meter_id:
+                continue
+            current = merged.get(meter_id, {
+                'id': meter_id, 'driver': '', 'key': '', 'name': meter.get('name', ''),
+                'source_name': meter.get('source_name', ''), 'last_seen': '', 'telegram_count': 0, 'complete': False,
+            })
+            if meter.get('driver') and (not current.get('driver') or current.get('driver') == 'unknown'):
+                current['driver'] = meter.get('driver')
+            if meter.get('key') and not current.get('key'):
+                current['key'] = meter.get('key')
+            if meter.get('name') and not current.get('name'):
+                current['name'] = meter.get('name')
+            if meter.get('source_name') and not current.get('source_name'):
+                current['source_name'] = meter.get('source_name')
+            if meter.get('last_seen'):
+                current['last_seen'] = meter.get('last_seen')
+            current['telegram_count'] = int(current.get('telegram_count', 0)) + int(meter.get('telegram_count', 0) or 0)
+            current['complete'] = bool(current.get('driver')) and current.get('driver') != 'unknown'
+            merged[meter_id] = current
+    return sorted(merged.values(), key=lambda item: (item.get('id') or ''))
+
 def render_status_summary(cfg):
     enriched = enrich_meter_statuses(cfg)
     enabled = [m for m in enriched if m['config'].get('enabled', True)]
@@ -956,7 +983,7 @@ def render_discovery(cfg):
     </div>
     '''
 
-    discovered_meters = parse_discovery_log(DISCOVERY_LOG)
+    discovered_meters = collect_discovered_meters(DISCOVERY_LOG, LOG_FILE)
     existing_by_id, existing_names, duplicate_ids = build_existing_meter_maps(cfg)
     discovered_meters_html = ''
     if discovered_meters:
@@ -1046,7 +1073,7 @@ def render_discovery(cfg):
     <div class="grid two">
       <div class="card">
         <h2>Discovery</h2>
-        <p>Discovery does not need configured meter IDs. Run it with the SDR attached, then merge discovered meters directly into your configuration.</p>
+        <p>Discovery does not need configured meter IDs. The plugin will temporarily stop the bridge during discovery to free the SDR, then restart it afterwards. Detected meters from discovery and recent bridge logs are merged below.</p>
         <div class="button-row">
           <button name="action" value="discover">Run discovery</button>
           <button name="action" value="clear_discovery_log" class="secondary">Clear discovery log</button>
