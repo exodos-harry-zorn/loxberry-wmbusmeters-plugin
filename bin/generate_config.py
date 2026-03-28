@@ -27,10 +27,10 @@ def validate_meter(meter: Dict[str, Any], require_id: bool = True) -> None:
 
 def radio_device_expr(cfg: Dict[str, Any]) -> str:
     radio = cfg.get("radio", {})
-    device = str(radio.get("device", "rtlwmbus"))
-    # Just output rtlwmbus and let wmbusmeters grab the first one
+    device = str(radio.get("device", "rtlwmbus")).strip()
+    rtl_index = str(radio.get("rtl_index", 0)).strip()
     if device == "rtlwmbus":
-        return "rtlwmbus"
+        return f"rtlwmbus[{rtl_index}]" if rtl_index not in ("", "0") else "rtlwmbus"
     if device == "auto":
         return device
     return device
@@ -43,12 +43,15 @@ def write_global_config(cfg: Dict[str, Any], outdir: pathlib.Path) -> None:
         f"device={radio_device_expr(cfg)}",
         f"listento={mode}",
         "format=json",
-        "meterfiles=/tmp/loxberry-wmbusmeters/generated/wmbusmeters.d",
+        f"meterfiles={outdir / 'wmbusmeters.d'}",
         f"loglevel={radio.get('log_level', 'normal')}",
         f"logtelegrams={'true' if radio.get('log_telegrams', False) else 'false'}",
         f"ignoreduplicates={'true' if radio.get('ignore_duplicates', True) else 'false'}",
         f"resetafter={radio.get('reset_after', '23h')}",
     ]
+    ppm = str(radio.get("ppm", 0)).strip()
+    if ppm not in ("", "0"):
+        conf.append(f"ppm={ppm}")
     (outdir / "wmbusmeters.conf").write_text("\n".join(conf) + "\n", encoding="utf-8")
 
 

@@ -10,6 +10,7 @@ CONFIG_FILE="${CONFIG_DIR}/config.json"
 RUNTIME_CONFIG_DIR="${WORKDIR}/generated"
 PIDFILE="${WORKDIR}/bridge.pid"
 LOGFILE="${WORKDIR}/bridge.log"
+PIPELINE_PIDFILE="${WORKDIR}/bridge.pipeline.pid"
 
 mkdir -p "$WORKDIR"
 
@@ -33,6 +34,7 @@ start() {
   python3 "$BIN_DIR/generate_config.py" --input "$CONFIG_FILE" --output-dir "$RUNTIME_CONFIG_DIR" || return 1
   nohup bash -c "wmbusmeters --useconfig=${RUNTIME_CONFIG_DIR} 2>>${LOGFILE} | python3 ${BIN_DIR}/publisher.py >>${LOGFILE} 2>&1" >/dev/null 2>&1 &
   echo $! > "$PIDFILE"
+  echo $! > "$PIPELINE_PIDFILE"
   echo "Started with PID $(cat "$PIDFILE")"
 }
 
@@ -42,12 +44,11 @@ stop() {
     pid="$(cat "$PIDFILE")"
     kill "$pid" 2>/dev/null || true
     sleep 1
+    kill -9 "$pid" 2>/dev/null || true
   fi
-  # Ensure any orphaned wmbusmeters / publisher processes are killed
-  killall -9 wmbusmeters rtl_sdr rtl_wmbus 2>/dev/null || true
-  # Find and kill any orphaned python publishers from our plugin
   pkill -f "python3 ${BIN_DIR}/publisher.py" 2>/dev/null || true
-  rm -f "$PIDFILE"
+  pkill -f "wmbusmeters --useconfig=${RUNTIME_CONFIG_DIR}" 2>/dev/null || true
+  rm -f "$PIDFILE" "$PIPELINE_PIDFILE"
   echo "Stopped"
 }
 

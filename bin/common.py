@@ -10,7 +10,7 @@ INSTALL_DIR = Path(os.environ.get("LB_WMBUS_INSTALL_DIR", f"/opt/loxberry/data/s
 CONFIG_DIR = Path(os.environ.get("LB_WMBUS_CONFIG_DIR", f"/opt/loxberry/config/plugins/{PLUGIN_FOLDER}"))
 BIN_DIR = Path(os.environ.get("LB_WMBUS_BIN_DIR", f"/opt/loxberry/bin/plugins/{PLUGIN_FOLDER}"))
 WEB_DIR = Path(os.environ.get("LB_WMBUS_WEB_DIR", f"/opt/loxberry/webfrontend/html/plugins/{PLUGIN_FOLDER}"))
-TMP_DIR = Path(os.environ.get("LB_WMBUS_TMP_DIR", "/tmp/loxberry-wmbusmeters"))
+TMP_DIR = Path(os.environ.get("LB_WMBUS_TMP_DIR") or os.environ.get("LBP_TMPDIR") or os.environ.get("LBPTMPDIR") or "/tmp/loxberry-wmbusmeters")
 CONFIG_FILE = CONFIG_DIR / "config.json"
 EXAMPLE_FILE = CONFIG_DIR / "config.example.json"
 RUNTIME_CONFIG_DIR = TMP_DIR / "generated"
@@ -21,7 +21,6 @@ DEPS_LOG = TMP_DIR / "deps_install.log"
 DEPS_STATUS_FILE = TMP_DIR / "deps_status.txt"
 HEALTHCHECK_FILE = TMP_DIR / "healthcheck_status.json"
 METER_STATUS_FILE = TMP_DIR / "meter_status.json"
-METER_RATES_FILE = TMP_DIR / "meter_rates.json"
 METER_RATES_FILE = TMP_DIR / "meter_rates.json"
 MQTT_CANDIDATE_FILES = [
     Path("/opt/loxberry/config/system/mqtt.json"),

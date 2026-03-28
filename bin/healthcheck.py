@@ -4,7 +4,7 @@ import json
 import logging
 from pathlib import Path
 import os
-from common import TMP_DIR, ensure_dir, DEPS_STATUS_FILE # type: ignore
+from common import TMP_DIR, ensure_dir, HEALTHCHECK_FILE # type: ignore
 
 LOG_FILE = TMP_DIR / "healthcheck.log"
 
@@ -42,7 +42,7 @@ def perform_health_check():
     status["overall_status"] = overall_status
 
     try:
-        with DEPS_STATUS_FILE.open("w", encoding="utf-8") as f:
+        with HEALTHCHECK_FILE.open("w", encoding="utf-8") as f:
             json.dump(status, f, indent=2, ensure_ascii=False)
         logging.info("Health check completed and status saved.")
     except Exception as e:
