@@ -54,19 +54,11 @@ start() {
     return 1
   fi
   python3 "$BIN_DIR/generate_config.py" --input "$CONFIG_FILE" --output-dir "$RUNTIME_CONFIG_DIR" || return 1
-  local runtime_conf meter_args meter_file
-  runtime_conf="${RUNTIME_CONFIG_DIR}/wmbusmeters.conf"
-  meter_args=""
-  shopt -s nullglob
-  for meter_file in "${RUNTIME_CONFIG_DIR}"/wmbusmeters.d/*.conf; do
-    meter_args+=" ${meter_file}"
-  done
-  shopt -u nullglob
-  if [[ -z "$meter_args" ]]; then
+  if ! compgen -G "${RUNTIME_CONFIG_DIR}/wmbusmeters.d/*.conf" >/dev/null; then
     echo "No meter files generated in ${RUNTIME_CONFIG_DIR}/wmbusmeters.d"
     return 1
   fi
-  nohup bash -c "wmbusmeters --useconfig=${runtime_conf} ${meter_args} 2>>${LOGFILE} | python3 ${BIN_DIR}/publisher.py >>${LOGFILE} 2>&1" >/dev/null 2>&1 &
+  nohup bash -c "wmbusmeters --useconfig=${RUNTIME_CONFIG_DIR} 2>>${LOGFILE} | python3 ${BIN_DIR}/publisher.py >>${LOGFILE} 2>&1" >/dev/null 2>&1 &
   echo $! > "$PIDFILE"
   echo $! > "$PIPELINE_PIDFILE"
   echo "Started with PID $(cat "$PIDFILE")"
