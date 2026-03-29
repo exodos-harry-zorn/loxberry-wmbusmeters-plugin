@@ -70,7 +70,7 @@ def write_meter_files(cfg: Dict[str, Any], outdir: pathlib.Path, allow_missing_i
         lines = [
             f"name={meter['name']}",
             f"id={meter['id']}",
-            f"driver={meter['driver']}",
+            f"type={meter['driver']}",
         ]
         if meter.get("key"):
             lines.append(f"key={meter['key']}")
