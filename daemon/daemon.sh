@@ -58,7 +58,7 @@ start() {
     echo "No meter files generated in ${RUNTIME_CONFIG_DIR}/wmbusmeters.d"
     return 1
   fi
-  nohup bash -c "wmbusmeters --useconfig=${RUNTIME_CONFIG_DIR} 2>>${LOGFILE} | python3 ${BIN_DIR}/publisher.py >>${LOGFILE} 2>&1" >/dev/null 2>&1 &
+  nohup bash -c "wmbusmeters --useconfig=${RUNTIME_CONFIG_DIR} 2>&1 | tee -a ${LOGFILE} | python3 ${BIN_DIR}/publisher.py >>${LOGFILE} 2>&1" >/dev/null 2>&1 &
   echo $! > "$PIDFILE"
   echo $! > "$PIPELINE_PIDFILE"
   echo "Started with PID $(cat "$PIDFILE")"

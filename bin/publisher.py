@@ -65,6 +65,8 @@ class Bridge:
         self.status_cache: Dict[str, Dict[str, Any]] = self._initial_status_cache()
         self.rates_cache: Dict[str, Dict[str, Any]] = self._load_rates_cache()
         self.last_status_publish = 0.0
+        self.pending_raw_id = None
+        self.pending_raw = {}
 
         self.publish(f"{self.base_topic}/bridge/status", "online")
         self.publish(f"{self.base_topic}/bridge/mqtt_source", mqtt_cfg.get("source", "unknown"))
@@ -101,39 +103,25 @@ class Bridge:
             }
         return cache
 
-    def process_raw_log_updates(self):
-        log_path = Path(LOG_FILE)
-        if not self.smoke_meter_ids or not log_path.exists():
+    def process_raw_line(self, line: str):
+        if not self.smoke_meter_ids:
             return
-        try:
-            with log_path.open('r', encoding='utf-8', errors='replace') as f:
-                f.seek(self.raw_log_offset)
-                lines = f.readlines()
-                self.raw_log_offset = f.tell()
-        except Exception:
-            logging.exception('Failed to read raw bridge log for smoke detector fallback')
+        match_id = RAW_ID_RE.search(line)
+        if match_id:
+            self.pending_raw_id = match_id.group(1)
+            self.pending_raw = {'id': self.pending_raw_id}
             return
-        pending_id = None
-        pending = {}
-        for raw in lines:
-            line = raw.strip()
-            if not line:
-                continue
-            m = RAW_ID_RE.search(line)
-            if m:
-                pending_id = m.group(1)
-                pending = {'id': pending_id}
-                continue
-            meta = RAW_META_RE.search(line)
-            if meta and pending_id:
-                key = meta.group(1).strip().lower()
-                val = meta.group(2).strip()
-                mapped = {'link mode': 'link_mode'}.get(key, key)
-                pending[mapped] = val
-                if mapped == 'driver':
-                    self.process_smoke_presence(pending)
-                    pending_id = None
-                    pending = {}
+        match_meta = RAW_META_RE.search(line.strip())
+        if match_meta and self.pending_raw_id:
+            key = match_meta.group(1).strip().lower()
+            value = match_meta.group(2).strip()
+            mapped = {'link mode': 'link_mode'}.get(key, key)
+            self.pending_raw[mapped] = value
+            if mapped == 'driver':
+                self.process_smoke_presence(self.pending_raw)
+                self.pending_raw_id = None
+                self.pending_raw = {}
+
 
     def process_smoke_presence(self, raw: Dict[str, Any]):
         meter_id = str(raw.get('id', ''))
