@@ -6,17 +6,22 @@ import signal
 import select
 import sys
 import time
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, Optional, Tuple
 
 import paho.mqtt.client as mqtt
-from common import METER_STATUS_FILE, METER_RATES_FILE, load_config, resolve_mqtt_settings
+from common import METER_STATUS_FILE, METER_RATES_FILE, LOG_FILE, load_config, resolve_mqtt_settings
 
 RUNNING = True
 STATUS_STALE_SECONDS = 15 * 60
 STATUS_OFFLINE_SECONDS = 60 * 60
 STATUS_PUBLISH_INTERVAL_SECONDS = 30
+SMOKE_DRIVERS = {"tsd2"}
+
+RAW_ID_RE = re.compile(r'Received telegram from:\s*([0-9A-Fa-f]+)', re.IGNORECASE)
+RAW_META_RE = re.compile(r'^(manufacturer|type|ver|device|rssi|link mode|driver):\s*(.+)$', re.IGNORECASE)
 
 FIELD_CANDIDATES = {
     "energy_kwh": ["total_energy_consumption_kwh", "total_kwh", "energy_kwh", "total_energy_kwh"],
@@ -53,6 +58,8 @@ class Bridge:
         self.client.loop_start()
         self.meter_names = {str(m.get("id")): m.get("name") for m in cfg.get("meters", []) if m.get("enabled", True) and m.get("id")}
         self.meter_configs = {str(m.get("id")): m for m in cfg.get("meters", []) if m.get("enabled", True) and m.get("id")}
+        self.smoke_meter_ids = {mid for mid, meter in self.meter_configs.items() if str(meter.get("driver", "")).lower() in SMOKE_DRIVERS}
+        self.raw_log_offset = 0
         self.meter_whitelist = [str(x) for x in cfg.get("radio", {}).get("meter_whitelist", []) if x]
         self.meter_blacklist = [str(x) for x in cfg.get("radio", {}).get("meter_blacklist", []) if x]
         self.status_cache: Dict[str, Dict[str, Any]] = self._initial_status_cache()
@@ -93,6 +100,76 @@ class Bridge:
                 "updated_at_epoch": int(now),
             }
         return cache
+
+    def process_raw_log_updates(self):
+        log_path = Path(LOG_FILE)
+        if not self.smoke_meter_ids or not log_path.exists():
+            return
+        try:
+            with log_path.open('r', encoding='utf-8', errors='replace') as f:
+                f.seek(self.raw_log_offset)
+                lines = f.readlines()
+                self.raw_log_offset = f.tell()
+        except Exception:
+            logging.exception('Failed to read raw bridge log for smoke detector fallback')
+            return
+        pending_id = None
+        pending = {}
+        for raw in lines:
+            line = raw.strip()
+            if not line:
+                continue
+            m = RAW_ID_RE.search(line)
+            if m:
+                pending_id = m.group(1)
+                pending = {'id': pending_id}
+                continue
+            meta = RAW_META_RE.search(line)
+            if meta and pending_id:
+                key = meta.group(1).strip().lower()
+                val = meta.group(2).strip()
+                mapped = {'link mode': 'link_mode'}.get(key, key)
+                pending[mapped] = val
+                if mapped == 'driver':
+                    self.process_smoke_presence(pending)
+                    pending_id = None
+                    pending = {}
+
+    def process_smoke_presence(self, raw: Dict[str, Any]):
+        meter_id = str(raw.get('id', ''))
+        if not meter_id or meter_id not in self.smoke_meter_ids:
+            return
+        meter_name = self.meter_names.get(meter_id) or meter_id
+        now_epoch = int(time.time())
+        timestamp = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime(now_epoch))
+        entry = self.status_cache.setdefault(meter_id, {
+            'status': 'offline', 'last_seen': None, 'last_seen_epoch': None,
+            'minutes_since_seen': None, 'updated_at_epoch': now_epoch,
+        })
+        entry['last_seen'] = timestamp
+        entry['last_seen_epoch'] = now_epoch
+        entry['minutes_since_seen'] = 0
+        entry['manufacturer'] = raw.get('manufacturer', '')
+        entry['device_type'] = raw.get('type', '')
+        entry['ver'] = raw.get('ver', '')
+        entry['device'] = raw.get('device', '')
+        entry['rssi'] = raw.get('rssi', '')
+        entry['link_mode'] = raw.get('link_mode', '')
+        entry['driver'] = raw.get('driver', '')
+        entry['encrypted'] = 'encrypted' in str(raw.get('type', '')).lower()
+        self.publish(self.topic(meter_name, 'raw_mode'), 'presence')
+        self.publish(self.topic(meter_name, 'manufacturer'), entry['manufacturer'])
+        self.publish(self.topic(meter_name, 'device_type'), entry['device_type'])
+        self.publish(self.topic(meter_name, 'ver'), entry['ver'])
+        self.publish(self.topic(meter_name, 'device'), entry['device'])
+        self.publish(self.topic(meter_name, 'rssi'), entry['rssi'])
+        self.publish(self.topic(meter_name, 'link_mode'), entry['link_mode'])
+        self.publish(self.topic(meter_name, 'encrypted'), 'true' if entry['encrypted'] else 'false')
+        self.publish(self.topic(meter_name, 'last_seen'), timestamp)
+        self.publish(self.topic(meter_name, 'last_seen_epoch'), now_epoch)
+        self.publish(self.topic(meter_name, 'minutes_since_seen'), 0)
+        self.set_meter_status(meter_id, 'online', publish=True)
+        self.write_status_file()
 
     def stop(self):
         for meter_id in list(self.status_cache.keys()):
